@@ -1,0 +1,229 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # BACKEND API SERVER (FastAPI)
+  # ============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: world-engine-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:worldengine_pass@db:5432/world_engine
+      - REDIS_URL=redis://redis:6379
+      - SKYREELS_BASE_URL=http://skyreels:8002
+      - AUDIOLEDM_BASE_URL=http://audioledm:8003
+      - TORTOISE_BASE_URL=http://tortoise:8001
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - YOUTUBE_CHANNEL_ID=${YOUTUBE_CHANNEL_ID}
+      - STREAM_NAME=${STREAM_NAME}
+      - LOG_LEVEL=INFO
+    depends_on:
+      - db
+      - redis
+      - skyreels
+      - audioledm
+      - tortoise
+      - ollama
+    volumes:
+      - ./src:/app/src
+      - ./videos:/app/videos
+      - ./logs:/app/logs
+      - ./config:/app/config
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # DATABASE (PostgreSQL)
+  # ============================================================================
+  db:
+    image: postgres:15-alpine
+    container_name: world-engine-db
+    environment:
+      POSTGRES_DB: world_engine
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: worldengine_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # CACHE (Redis)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: world-engine-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # VIDEO GENERATION (SkyReels V2)
+  # ============================================================================
+  skyreels:
+    build:
+      context: ./services/video_generation
+      dockerfile: Dockerfile.skyreels
+    container_name: world-engine-skyreels
+    ports:
+      - "8002:8002"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Primary GPU
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_PATH=/models/skyreels
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models/skyreels:/models/skyreels
+      - ./videos:/videos
+      - ./logs:/logs
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # AUDIO GENERATION - AudioLDM2 (Ambient + SFX)
+  # ============================================================================
+  audioledm:
+    build:
+      context: ./services/audio_generation/audioledm
+      dockerfile: Dockerfile
+    container_name: world-engine-audioledm
+    ports:
+      - "8003:8003"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Shared GPU
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_PATH=/models/audioledm
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models/audioledm:/models/audioledm
+      - ./audio:/audio
+      - ./logs:/logs
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # AUDIO GENERATION - Tortoise TTS (Dialogue/Voice)
+  # ============================================================================
+  tortoise:
+    build:
+      context: ./services/audio_generation/tortoise
+      dockerfile: Dockerfile
+    container_name: world-engine-tortoise
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Shared GPU
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_PATH=/models/tortoise
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models/tortoise:/models/tortoise
+      - ./audio:/audio
+      - ./logs:/logs
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # LLM - Ollama (Mistral 7B / Llama 70B)
+  # ============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: world-engine-ollama
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Shared GPU
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - OLLAMA_MODELS=/models/ollama
+    volumes:
+      - ./models/ollama:/models/ollama
+      - ./logs:/logs
+    networks:
+      - world-engine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  world-engine:
+    driver: bridge
