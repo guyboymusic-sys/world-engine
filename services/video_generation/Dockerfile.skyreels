@@ -1,0 +1,42 @@
+# Dockerfile for SkyReels V2
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    wget \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    diffusers \
+    transformers \
+    gradio \
+    omegaconf \
+    einops \
+    accelerate \
+    safetensors \
+    huggingface-hub
+
+# Clone SkyReels V2
+RUN git clone https://github.com/SkyworkAI/SkyReels-V2.git /app/skyreels
+
+WORKDIR /app/skyreels
+
+# Download model weights
+RUN mkdir -p /models/skyreels && \
+    python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='SkyworkAI/SkyReels-V2-14B', filename='pytorch_model.bin', local_dir='/models/skyreels')" || echo "Model download deferred"
+
+# Copy API wrapper
+COPY services/video_generation/api_skyreels.py /app/api_skyreels.py
+
+EXPOSE 8002
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+CMD ["python", "/app/api_skyreels.py"]
