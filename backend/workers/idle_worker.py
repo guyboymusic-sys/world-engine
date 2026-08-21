@@ -16,7 +16,7 @@ from backend.core.config import get_settings
 settings = get_settings()
 log = structlog.get_logger()
 
-API_BASE = "http://localhost:8000/api/v1"
+API_BASE = settings.api_base_url
 
 # Redis keys
 _LAST_DONATION_KEY = "world_engine:idle:last_donation_ts"

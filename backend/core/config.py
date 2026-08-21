@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     tts_worker_concurrency: int = 2
     llm_worker_concurrency: int = 1
 
+    # Internal API base URL (used by workers to call the API service)
+    # In Docker: "http://api:8000/api/v1" | Local dev: "http://localhost:8000/api/v1"
+    api_base_url: str = "http://api:8000/api/v1"
+
     # Idle level system
     # How long (seconds) without a donation before idle content fires
     idle_trigger_seconds: int = 120

@@ -1,5 +1,8 @@
 """FastAPI application entry point."""
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -42,9 +45,6 @@ app.include_router(llm.router, prefix="/api/v1/llm", tags=["llm"])
 app.include_router(donations.router, prefix="/api/v1/donations", tags=["donations"])
 app.include_router(stream.router, prefix="/api/v1/stream", tags=["stream"])
 app.include_router(composite.router, prefix="/api/v1/composite", tags=["composite"])
-
-import os
-from pathlib import Path
 
 _outputs_dir = Path(os.environ.get("OUTPUTS_DIR", "/outputs"))
 if _outputs_dir.exists():

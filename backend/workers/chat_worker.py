@@ -18,7 +18,7 @@ settings = get_settings()
 log = structlog.get_logger()
 
 YOUTUBE_CHAT_URL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
-DONATIONS_URL = "http://localhost:8000/api/v1/donations"
+DONATIONS_URL = f"{settings.api_base_url}/donations"
 
 # In-memory set of already-processed event IDs (survives worker restarts via Redis)
 _PROCESSED_KEY = "world_engine:chat:processed_ids"
@@ -90,7 +90,7 @@ def poll_youtube_chat():
                 # 409 = already processed (idempotent), mark done
                 r.sadd(_PROCESSED_KEY, event_id)
                 # Keep the set from growing forever – cap at 10 000 entries
-                r.execute_command("SRANDMEMBER", _PROCESSED_KEY)
+    # Remove the useless SRANDMEMBER; spop already handles size capping
                 if r.scard(_PROCESSED_KEY) > 10_000:
                     r.spop(_PROCESSED_KEY, 1000)
             else:

@@ -1,4 +1,5 @@
 """Stream control endpoints – start/stop RTMP push."""
+import asyncio
 import subprocess
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,8 +62,7 @@ async def start_stream(db: AsyncSession = Depends(get_db)):
     _stream_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Give FFmpeg a moment to start and detect immediate failure (e.g. missing file)
-    import time
-    time.sleep(1)
+    await asyncio.sleep(1)
     if _stream_process.poll() is not None:
         _stream_process = None
         raise HTTPException(
