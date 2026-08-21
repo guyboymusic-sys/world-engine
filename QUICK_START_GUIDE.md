@@ -1,6 +1,6 @@
 # 🎮 World Engine - QUICK START GUIDE สำหรับมือใหม่
 # ========================================
-# คู่มือครบถ้วน: ตั้งแต่เช่า GPU จนถึงเริ่มสตรีม
+# คู่มือครบถ้วน: ตั้งแต่เช่า GPU จนถึงเริ่มสตรีมบน YouTube Live
 # สำหรับ RunPod 96GB VRAM RTX Pro
 
 ---
@@ -9,7 +9,7 @@
 1. [ขั้นตอนที่ 1: เช่า GPU บน RunPod](#ขั้นตอนที่-1-เช่า-gpu-บน-runpod)
 2. [ขั้นตอนที่ 2: เข้าไปในเครื่อง GPU](#ขั้นตอนที่-2-เข้าไปในเครื่อง-gpu)
 3. [ขั้นตอนที่ 3: ติดตั้ง World Engine](#ขั้นตอนที่-3-ติดตั้ง-world-engine)
-4. [ขั้นตอนที่ 4: ตั้งค่า YouTube](#ขั้นตอนที่-4-ตั้งค่า-youtube)
+4. [ขั้นตอนที่ 4: ได้รับ YouTube Stream Key](#ขั้นตอนที่-4-ได้รับ-youtube-stream-key)
 5. [ขั้นตอนที่ 5: เริ่มสตรีม](#ขั้นตอนที่-5-เริ่มสตรีม)
 6. [บัญชีคำสั่งอ้างอิง](#บัญชีคำสั่งอ้างอิง)
 
@@ -83,6 +83,7 @@ bash runpod_install_96gb.sh
 ✅ ดาวน์โหลด AI models (SkyReels V2, AudioLDM2, Tortoise TTS, Mistral 7B)  
 ✅ ตั้งค่า PostgreSQL Database  
 ✅ ตั้งค่า Redis Cache  
+✅ ติดตั้ง FFmpeg สำหรับ streaming  
 ✅ สร้าง Docker containers ทั้งหมด  
 ✅ เริ่มบริการทั้งหมด  
 
@@ -101,36 +102,44 @@ cd /root/world-engine && ./status.sh
 # ✓ AudioLDM2 (8003) - UP
 # ✓ Tortoise TTS (8001) - UP
 # ✓ Ollama (11434) - UP
+# ✓ FFmpeg Streaming - UP
 ```
 
 ---
 
-## ขั้นตอนที่ 4: ตั้งค่า YouTube
+## ขั้นตอนที่ 4: ได้รับ YouTube Stream Key
 
-### 4.1 ได้รับ YouTube API Key
+### ⚠️ สำคัญ: YouTube Stream Key คืออะไร?
+YouTube Stream Key (หรือ RTMP Key) คือรหัสลับที่ใช้สำหรับเชื่อมต่อการสตรีมจากเครื่องของคุณ (RunPod) ไปยัง YouTube Live
 
-#### ขั้นตอน A: เปิด Google Cloud Console
-- ไปที่ https://console.cloud.google.com/
-- กดปุ่ม **"Create Project"**
-- ตั้งชื่อ: **"World Engine"** → กด **Create**
+### 4.1 ไปที่ YouTube Studio
+- ไปที่ https://studio.youtube.com/
+- เข้าด้วยบัญชี YouTube ของคุณ
 
-#### ขั้นตอน B: เปิด YouTube API
-- ไปที่ **APIs & Services** → **Library**
-- ค้นหา **"YouTube Data API v3"**
-- กดปุ่ม **"Enable"**
+### 4.2 เปิด "Go Live" (เพื่อรับ Stream Key)
+- ที่เมนูด้านซ้าย คลิก **"Go live"** (หรือ "Create" → "Go live")
+- เลือก **"Set up stream"** → **"RTMP encoder"** (ไม่ใช่ "Webcam")
 
-#### ขั้นตอน C: สร้าง API Key
-- ไปที่ **APIs & Services** → **Credentials**
-- กดปุ่ม **"Create Credentials"** → เลือก **"API Key"**
-- Copy API Key (แบบนี้: `AIzaSyD...`)
+### 4.3 คัดลอก Stream Key
+บนหน้า RTMP encoder คุณจะเห็น:
 
-### 4.2 ได้รับ Channel ID
-- ไปที่ YouTube channel ของคุณ
-- กดปุ่ม **"About"** (แท็บที่ 3)
-- ดูหมายเลข "@channelname" หรือ "Channel ID: UC..."
-- Copy Channel ID (แบบนี้: `UC123456789...`)
+```
+Server URL (RTMP): rtmps://a.rtmp.youtube.com/live2/
+Stream key (or Stream name): abc1-2345-67890-abcd
+```
 
-### 4.3 ตั้งค่า Environment File
+**นี่คือสิ่งที่เราต้องการ:**
+- **Server URL**: `rtmps://a.rtmp.youtube.com/live2/`
+- **Stream Key**: `abc1-2345-67890-abcd` (ของคุณจะต่างกัน)
+
+### 4.4 เก็บลิงค์ RTMP ที่สมบูรณ์
+```
+rtmps://a.rtmp.youtube.com/live2/abc1-2345-67890-abcd
+```
+
+> **⚠️ สำคัญ:** อย่าแชร์ Stream Key กับใครเด็ดขาด! มันคือรหัสของคุณเท่านั้น!
+
+### 4.5 ตั้งค่า .env ใน RunPod
 
 ```bash
 # เปิดไฟล์ .env เพื่อแก้ไข
@@ -141,24 +150,24 @@ nano /root/world-engine/.env
 
 ```env
 # ❌ BEFORE (ปล่อยไว้เช่นนี้)
-YOUTUBE_CHANNEL_ID=your_channel_id_here
-YOUTUBE_API_KEY=your_api_key_here
-STREAM_NAME=your_stream_name_here
+RTMP_SERVER_URL=rtmps://a.rtmp.youtube.com/live2/
+RTMP_STREAM_KEY=your_stream_key_here
+STREAM_TITLE=your_stream_title_here
 
 # ✅ AFTER (แทนที่ด้วยค่าของคุณ)
-YOUTUBE_CHANNEL_ID=UC123456789abcdefghijklmnop
-YOUTUBE_API_KEY=AIzaSyD1234567890abcdefghijklmnop
-STREAM_NAME=World Engine Gaming Stream
+RTMP_SERVER_URL=rtmps://a.rtmp.youtube.com/live2/
+RTMP_STREAM_KEY=abc1-2345-67890-abcd
+STREAM_TITLE=World Engine AI Gaming Stream
 ```
 
 **วิธีแก้ไขใน nano:**
-1. ใช้ **Ctrl+X** เพื่อค้นหา
-2. พิมพ์ `YOUTUBE_CHANNEL_ID`
+1. ใช้ **Ctrl+W** เพื่อค้นหา
+2. พิมพ์ `RTMP_STREAM_KEY`
 3. ลบข้อความเก่า (ใช้ **Delete** หรือ **Backspace**)
-4. พิมพ์ Channel ID ของคุณ
+4. พิมพ์ Stream Key ของคุณ (ตัวอย่าง: `abc1-2345-67890-abcd`)
 5. กด **Ctrl+X** → **y** → **Enter** เพื่อบันทึก
 
-### 4.4 Reload Services
+### 4.6 Reload Services
 ```bash
 cd /root/world-engine && ./reload.sh
 ```
@@ -178,6 +187,7 @@ cd /root/world-engine && ./status.sh
 ✓ Database connected
 ✓ Redis connected
 ✓ GPU status: OK
+✓ FFmpeg ready for streaming
 ```
 
 ### 5.2 ดูประวัติการทำงาน (Logs)
@@ -196,23 +206,32 @@ watch -n 1 nvidia-smi
 cd /root/world-engine && ./monitor_gpu.sh
 ```
 
-### 5.4 เริ่มสตรีม!
+### 5.4 เริ่มสตรีมไปยัง YouTube! 🎬
 ```bash
-# เปิด terminal ใหม่ (ยังคงอยู่ใน SSH)
-# Terminal 1: Backend logs
-cd /root/world-engine && ./logs.sh
-
-# Terminal 2: เรียก API เพื่อเริ่มสตรีม
+# เรียก API เพื่อเริ่มสตรีมด้วย RTMP
 curl -X POST http://localhost:8000/api/stream/start \
   -H "Content-Type: application/json" \
   -d '{
-    "channel_id": "UC123456789...",
-    "title": "First World Engine Stream!",
-    "description": "Testing AI-generated streaming"
+    "title": "World Engine AI Gaming Stream",
+    "description": "First AI-powered interactive stream!"
   }'
 ```
 
-**สตรีมควรจะเริ่มขึ้น!** ✅
+**ผลลัพธ์ที่ควรได้:**
+```json
+{
+  "status": "streaming",
+  "stream_id": "abc123",
+  "rtmp_connected": true,
+  "gpu_usage": "78%",
+  "message": "Stream started successfully!"
+}
+```
+
+### 5.5 ตรวจสอบสตรีมบน YouTube
+- ไปที่ https://studio.youtube.com/
+- ควรเห็นสตรีมกำลังทำงาน (ไฟเขียว/LIVE)
+- ไปที่ YouTube channel ของคุณเพื่อดูสตรีม
 
 ---
 
@@ -230,6 +249,23 @@ cd /root/world-engine
 ./status.sh
 ```
 
+### 📺 การใช้ RTMP Streaming
+```bash
+# เริ่มสตรีมไปยัง YouTube
+curl -X POST http://localhost:8000/api/stream/start \
+  -H "Content-Type: application/json" \
+  -d '{"title": "My Stream Title"}'
+
+# ดูสถานะสตรีม
+curl http://localhost:8000/api/stream/status
+
+# หยุดสตรีม
+curl -X POST http://localhost:8000/api/stream/stop
+
+# ดึงข้อมูลสตรีม
+curl http://localhost:8000/api/stream/info
+```
+
 ### 🔧 การจัดการบริการ
 ```bash
 # ดูสถานะทั้งหมด
@@ -243,15 +279,24 @@ cd /root/world-engine
 
 # หยุดบริการทั้งหมด
 ./stop.sh
+
+# รีสตาร์ทบริการ
+./restart.sh
 ```
 
-### 📊 การตรวจสอบ GPU
+### 📊 การตรวจสอบ GPU และ Streaming
 ```bash
 # ดู GPU usage แบบ real-time
 ./monitor_gpu.sh
 
 # ดูเฉพาะ CUDA info
 nvidia-smi
+
+# ตรวจสอบ FFmpeg process
+ps aux | grep ffmpeg
+
+# ดู RTMP connection status
+netstat -tlnp | grep ffmpeg
 ```
 
 ### 🌐 API Endpoints
@@ -275,60 +320,90 @@ curl http://localhost:8003/health
 curl http://localhost:8001/health
 ```
 
-### 📝 การแก้ไขการตั้งค่า
+### 📝 การแก้ไขการตั้งค่า RTMP
 ```bash
 # แก้ไข .env
 nano /root/world-engine/.env
 
-# แก้ไขแล้วบันทึก (Ctrl+X → y → Enter)
+# ค้นหา: RTMP_STREAM_KEY
+# แทนที่ด้วย stream key ของคุณ
+
+# บันทึก (Ctrl+X → y → Enter)
 # แล้ว reload services
 ./reload.sh
 ```
 
-### 🐛 การ Debug
+### 🐛 การ Debug Streaming
 ```bash
-# ดูตัวบันทึก backend แค่บรรทัดล่าสุด
-tail -f /root/world-engine/logs/backend.log
+# ดูตัวบันทึก FFmpeg
+tail -f /root/world-engine/logs/ffmpeg.log
 
-# ดูลอกเข้า Docker container
-docker logs world-engine-backend -f
+# ดูตัวบันทึก streaming backend
+tail -f /root/world-engine/logs/stream.log
 
-# เข้า database
-docker exec -it world-engine-db psql -U postgres -d world_engine
+# ตรวจสอบ RTMP connection
+curl -v rtmps://a.rtmp.youtube.com/live2/abc1-2345-67890-abcd
+
+# ดู CPU/Memory usage
+top -b -n 1 | head -20
 ```
 
 ---
 
-## 🎬 ขั้นตอนการสตรีมทีละขั้น
+## 🎬 ขั้นตอนการสตรีมทีละขั้น (เต็มรูป)
 
-### ขั้นตอนที่ 1: เตรียม
+### ขั้นตอนที่ 1: เตรียมก่อนสตรีม
 ```bash
 cd /root/world-engine
 
-# ตรวจสอบบริการ
+# 1. ตรวจสอบบริการ
 ./status.sh
 
-# ดูประวัติการทำงาน
+# 2. ดูประวัติการทำงาน (ให้เห็นว่ามีข้อผิดพลาดไหม)
 ./logs.sh
+
+# 3. ตรวจสอบการใช้ GPU
+nvidia-smi
 ```
 
-### ขั้นตอนที่ 2: ส่งคำสั่งเริ่มสตรีม
+### ขั้นตอนที่ 2: ไปที่ YouTube Studio
+- เข้าไปที่ https://studio.youtube.com/
+- คลิก "Go live" → "Set up stream"
+- ตรวจสอบ Stream Key (ควรตรงกับที่ใน .env)
+
+### ขั้นตอนที่ 3: เริ่มสตรีมด้วยคำสั่ง
 ```bash
-# Terminal ใหม่
+# Terminal 1: ดูประวัติการทำงาน
+cd /root/world-engine && ./logs.sh
+
+# Terminal 2: เริ่มสตรีม
 curl -X POST http://localhost:8000/api/stream/start \
   -H "Content-Type: application/json" \
   -d '{
-    "channel_id": "YOUR_CHANNEL_ID",
-    "title": "World Engine Live Stream",
-    "description": "AI-powered interactive streaming"
+    "title": "World Engine AI Gaming Stream",
+    "description": "Live AI-powered gaming with SkyReels V2!"
   }'
 ```
 
-### ขั้นตอนที่ 3: ดูสตรีม
-- ไปที่ YouTube channel ของคุณ
-- คลิก "Go Live" หรือดูที่ https://youtube.com/watch?v=YOUR_BROADCAST_ID
+### ขั้นตอนที่ 4: ดูผลลัพธ์
+```bash
+# ควรเห็น:
+{
+  "status": "streaming",
+  "stream_id": "abc123xyz",
+  "rtmp_connected": true,
+  "bitrate": "6000k",
+  "fps": 30,
+  "gpu_usage": "85%"
+}
+```
 
-### ขั้นตอนที่ 4: ส่งคำสั่งต่างๆ ให้ AI
+### ขั้นตอนที่ 5: ตรวจสอบบน YouTube
+- ไปที่ YouTube Live Control Room
+- ควรเห็นตัวอักษร "LIVE" แสดง (สีแดง)
+- ดูสตรีมบน YouTube channel: `https://youtube.com/@YourChannelName/live`
+
+### ขั้นตอนที่ 6: ส่งคำสั่งให้ AI
 ```bash
 # ตัวอย่าง: สั่งให้ character ลง craft
 curl -X POST http://localhost:8000/api/action \
@@ -347,27 +422,75 @@ curl -X POST http://localhost:8000/api/action \
     "location": "forest",
     "character_id": "main_character"
   }'
+
+# ตัวอย่าง: สั่งให้พูด
+curl -X POST http://localhost:8000/api/action \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "speak",
+    "text": "Hello everyone! Welcome to World Engine!",
+    "character_id": "main_character"
+  }'
 ```
 
-### ขั้นตอนที่ 5: หยุดสตรีม
+### ขั้นตอนที่ 7: หยุดสตรีม
 ```bash
+# ส่งคำสั่งหยุด
 curl -X POST http://localhost:8000/api/stream/stop
+
+# ควรเห็น:
+{
+  "status": "stopped",
+  "duration": "1 hour 23 minutes",
+  "total_frames": "150000",
+  "message": "Stream ended gracefully"
+}
 ```
 
 ---
 
 ## ⚠️ ข้อปัญหาทั่วไปและการแก้ไข
 
-### ปัญหา: Services ไม่ขึ้น
+### ❌ ปัญหา: "RTMP connection failed"
+```bash
+# 1. ตรวจสอบ Stream Key
+cat /root/world-engine/.env | grep RTMP
+
+# 2. ให้แน่ใจว่า:
+# ✓ Stream Key ไม่มี spaces
+# ✓ Server URL ถูกต้อง (rtmps://a.rtmp.youtube.com/live2/)
+# ✓ ไฟเวลล์ไม่บล็อก port 443/1935
+
+# 3. ลองตั้งค่าใหม่
+nano /root/world-engine/.env
+# แล้ว reload
+./reload.sh
+```
+
+### ❌ ปัญหา: "Stream key is invalid"
+```bash
+# Stream key หมดอายุ ให้ไปที่ YouTube สร้างใหม่:
+# 1. YouTube Studio → Go live → Set up stream
+# 2. Copy Stream key ใหม่
+# 3. อัพเดต .env
+nano /root/world-engine/.env
+# แล้วค้นหา RTMP_STREAM_KEY และแทนที่
+./reload.sh
+```
+
+### ❌ ปัญหา: Services ไม่ขึ้น
 ```bash
 # ลองรีโหลด
 ./reload.sh
 
 # รอ 30 วินาที แล้วตรวจสอบ
 ./status.sh
+
+# ถ้ายังไม่ได้ ลอง restart
+./restart.sh
 ```
 
-### ปัญหา: GPU ใช้ไม่ได้
+### ❌ ปัญหา: GPU ใช้ไม่ได้
 ```bash
 # ตรวจสอบ CUDA
 nvidia-smi
@@ -376,87 +499,97 @@ nvidia-smi
 docker run --rm --gpus all nvidia/cuda:12.4.1-runtime-ubuntu22.04 nvidia-smi
 ```
 
-### ปัญหา: YouTube API ไม่ทำงาน
+### ❌ ปัญหา: FFmpeg ไม่เชื่อมต่อ YouTube
 ```bash
-# ตรวจสอบ credentials ใน .env
-cat /root/world-engine/.env | grep YOUTUBE
+# ตรวจสอบว่า FFmpeg ติดตั้งแล้ว
+which ffmpeg
 
-# ตรวจสอบให้แน่ใจว่า:
-# ✓ YOUTUBE_CHANNEL_ID ถูกต้อง
-# ✓ YOUTUBE_API_KEY ถูกต้อง
-# ✓ ไม่มี space หรือ quotes เพิ่มเติม
+# ดู FFmpeg logs
+tail -f /root/world-engine/logs/ffmpeg.log
+
+# ลองเชื่อมต่อด้วยตนเอง (เพื่อ test)
+ffmpeg -f gdigrab -i desktop -vcodec libx264 -preset ultrafast \
+  -pix_fmt yuv420p -f flv rtmps://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY
 ```
 
-### ปัญหา: Models ไม่ได้ดาวน์โหลด
+### ❌ ปัญหา: GPU memory ไม่เพียงพอ
 ```bash
-# ตรวจสอบพื้นที่ว่าง
-df -h
+# ดู GPU memory usage
+nvidia-smi
 
-# ดูว่า models อยู่ไหน
-ls -lh /root/world-engine/models/
-
-# ดาวน์โหลด models เพิ่มเติมด้วยตัวเอง
-cd /root/world-engine
-python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='SkyworkAI/SkyReels-V2-14B', filename='pytorch_model.bin', local_dir='./models/skyreels')"
+# ลด quality หรือ resolution
+nano /root/world-engine/.env
+# ค้นหา: VIDEO_BITRATE (ลดจาก 6000k เป็น 4000k)
+# ค้นหา: VIDEO_RESOLUTION (ลดจาก 1080p เป็น 720p)
+./reload.sh
 ```
 
 ---
 
-## 📊 ตัวอย่าง CURL Commands
+## 📊 ตัวอย่าง CURL Commands สำหรับการสตรีม
 
 ### ตัวอย่าง 1: เช็คสถานะ
 ```bash
 curl http://localhost:8000/health
-# ผลลัพธ์: {"status": "ok"}
+# ผลลัพธ์: {"status": "ok", "gpu": "active"}
 ```
 
-### ตัวอย่าง 2: สร้าง Character
+### ตัวอย่าง 2: เริ่มสตรีม
 ```bash
-curl -X POST http://localhost:8000/api/characters/create \
+curl -X POST http://localhost:8000/api/stream/start \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Hero",
-    "appearance": "tall adventurer with sword"
+    "title": "My AI Gaming Stream",
+    "description": "Powered by World Engine"
   }'
 ```
 
-### ตัวอย่าง 3: สั่งสร้างวิดีโอ
+### ตัวอย่าง 3: ดูสถานะการสตรีม
 ```bash
-curl -X POST http://localhost:8000/api/generate/video \
+curl http://localhost:8000/api/stream/status
+# ผลลัพธ์:
+# {
+#   "is_streaming": true,
+#   "fps": 30,
+#   "bitrate": "6000k",
+#   "gpu_usage": "82%",
+#   "uptime": "1 hour 15 minutes"
+# }
+```
+
+### ตัวอย่าง 4: สั่งให้ AI ทำสิ่งต่างๆ
+```bash
+curl -X POST http://localhost:8000/api/action \
   -H "Content-Type: application/json" \
   -d '{
-    "character_id": "hero_1",
-    "action": "walking through forest",
+    "action": "generate_video",
+    "prompt": "A hero walking through a magical forest",
     "duration": 30
   }'
 ```
 
-### ตัวอย่าง 4: สั่งสร้างเสียง
+### ตัวอย่าง 5: หยุดสตรีม
 ```bash
-curl -X POST http://localhost:8000/api/generate/audio \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "dialogue",
-    "text": "Hello, welcome to my world!",
-    "voice": "character_voice_1"
-  }'
+curl -X POST http://localhost:8000/api/stream/stop
 ```
 
 ---
 
 ## ✅ Checklist สำหรับการเริ่มต้นแรก
 
-- [ ] เช่า GPU บน RunPod (96GB)
+- [ ] เช่า GPU บน RunPod (96GB RTX Pro)
 - [ ] เข้า Terminal/SSH ของ RunPod
 - [ ] รัน `bash runpod_install_96gb.sh`
 - [ ] รอการติดตั้งเสร็จ (~45 นาที)
-- [ ] ได้รับ YouTube API Key
-- [ ] ได้รับ YouTube Channel ID
-- [ ] แก้ไข `.env` ด้วย credentials
+- [ ] ไปที่ YouTube Studio
+- [ ] คลิก "Go live" → "Set up stream" → "RTMP encoder"
+- [ ] Copy Stream Key จาก YouTube
+- [ ] แก้ไข `.env` ด้วย RTMP Stream Key
 - [ ] รัน `./reload.sh`
 - [ ] รัน `./status.sh` (ตรวจสอบทุกบริการ)
 - [ ] ส่ง curl command เพื่อเริ่มสตรีม
-- [ ] ดูสตรีมบน YouTube
+- [ ] ตรวจสอบบน YouTube ว่าสตรีมออนไลน์แล้ว
+- [ ] ส่งคำสั่ง API เพื่อควบคุม AI
 
 ---
 
@@ -469,17 +602,36 @@ cd /root/world-engine && ./logs.sh
 # ดู status ทั้งหมด
 ./status.sh
 
-# ตรวจสอบ configs
-cat /root/world-engine/.env
+# ตรวจสอบ RTMP configs
+cat /root/world-engine/.env | grep RTMP
 
 # ดูการใช้ VRAM
 nvidia-smi
 
-# ตรวจสอบ database
-docker exec -it world-engine-db psql -U postgres -d world_engine -c "SELECT * FROM characters;"
+# ตรวจสอบ FFmpeg process
+ps aux | grep ffmpeg
+
+# ดู RTMP connection
+netstat -tlnp | grep 1935
 ```
+
+---
+
+## 🎯 Quick Reference: YouTube RTMP
+
+| คำศัพท์ | ความหมาย | ตัวอย่าง |
+|--------|---------|--------|
+| **RTMP** | Real-Time Messaging Protocol | ใช้สำหรับส่งวิดีโอแบบ live |
+| **Stream Key** | รหัสลับสำหรับเชื่อมต่อ | `abc1-2345-67890-abcd` |
+| **Server URL** | ที่อยู่ของ YouTube server | `rtmps://a.rtmp.youtube.com/live2/` |
+| **RTMP URL** | Full URL สำหรับ streaming | `rtmps://a.rtmp.youtube.com/live2/abc1-2345...` |
 
 ---
 
 **🎉 ยินดีต้อนรับสู่ World Engine! ขอให้สตรีมของคุณสำเร็จ! 🎉**
 
+อย่าลืม:
+- ✅ **ป้องกัน Stream Key** - อย่าแชร์กับใคร!
+- ✅ **ตรวจสอบ GPU usage** - อย่าให้ VRAM เต็ม
+- ✅ **ดู logs** - ถ้ามีปัญหาให้ดูที่นี่ก่อน
+- ✅ **วอร์มอัพเครื่อง** - รอให้ services พร้อมก่อนเริ่มสตรีม
