@@ -11,11 +11,18 @@ from backend.core.celery_app import celery_app
 
 settings = get_settings()
 
-_engine = create_engine(settings.database_sync_url)
-_Session = sessionmaker(bind=_engine)
+_engine = None
+_Session = None
+
+
+def _get_session_factory():
+    global _engine, _Session
+    if _Session is None:
+        _engine = create_engine(settings.database_sync_url)
+        _Session = sessionmaker(bind=_engine)
+    return _Session
 
 OUTPUT_DIR = Path("/outputs/llm")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 _model = None
 _tokenizer = None
@@ -39,7 +46,7 @@ def _get_model():
     return _model, _tokenizer
 
 
-@celery_app.task(name="backend.workers.llm_worker.generate_llm_task", bind=True)
+@celery_app.task(name="backend.workers.llm_worker.generate_llm_task", bind=True, queue="llm")
 def generate_llm_task(
     self,
     job_id: str,
@@ -48,13 +55,14 @@ def generate_llm_task(
     temperature: float = 0.7,
     top_p: float = 0.9,
 ):
-    with _Session() as db:
+    with _get_session_factory()() as db:
         job = db.get(GenerationJob, uuid.UUID(job_id))
         job.status = JobStatus.started
         job.celery_task_id = self.request.id
         db.commit()
 
     try:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         model, tokenizer = _get_model()
 
         messages = [
@@ -84,7 +92,7 @@ def generate_llm_task(
         out_path = OUTPUT_DIR / f"{job_id}.txt"
         out_path.write_text(response_text, encoding="utf-8")
 
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.success
             job.result_path = str(out_path)
@@ -93,7 +101,7 @@ def generate_llm_task(
         return response_text
 
     except Exception as exc:
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.failure
             job.error_message = str(exc)

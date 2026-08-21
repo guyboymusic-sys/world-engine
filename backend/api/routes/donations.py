@@ -8,6 +8,7 @@ from sqlalchemy import select
 from backend.db.database import get_db
 from backend.models.models import Donation, GenerationJob, JobStatus
 from backend.workers.llm_worker import generate_llm_task
+from backend.workers.idle_worker import reset_idle_on_donation
 from backend.api.schemas import JobOut
 
 router = APIRouter()
@@ -64,6 +65,10 @@ async def create_donation(payload: DonationCreate, db: AsyncSession = Depends(ge
     db.add(donation)
     await db.commit()
     await db.refresh(donation)
+
+    # Reset idle clock and level so the stream returns to calm state
+    reset_idle_on_donation.delay()
+
     return donation
 
 

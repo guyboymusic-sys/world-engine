@@ -12,11 +12,18 @@ from backend.core.celery_app import celery_app
 
 settings = get_settings()
 
-_engine = create_engine(settings.database_sync_url)
-_Session = sessionmaker(bind=_engine)
+_engine = None
+_Session = None
+
+
+def _get_session_factory():
+    global _engine, _Session
+    if _Session is None:
+        _engine = create_engine(settings.database_sync_url)
+        _Session = sessionmaker(bind=_engine)
+    return _Session
 
 OUTPUT_DIR = Path("/outputs/audio")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 _pipeline = None
 
@@ -35,7 +42,7 @@ def _get_pipeline():
     return _pipeline
 
 
-@celery_app.task(name="backend.workers.audio_worker.generate_audio_task", bind=True)
+@celery_app.task(name="backend.workers.audio_worker.generate_audio_task", bind=True, queue="audio")
 def generate_audio_task(
     self,
     job_id: str,
@@ -44,13 +51,14 @@ def generate_audio_task(
     guidance_scale: float = 3.5,
     num_inference_steps: int = 200,
 ):
-    with _Session() as db:
+    with _get_session_factory()() as db:
         job = db.get(GenerationJob, uuid.UUID(job_id))
         job.status = JobStatus.started
         job.celery_task_id = self.request.id
         db.commit()
 
     try:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         pipe = _get_pipeline()
         output = pipe(
             prompt,
@@ -64,7 +72,7 @@ def generate_audio_task(
         out_path = OUTPUT_DIR / f"{job_id}.wav"
         sf.write(str(out_path), audio, settings.audio_sample_rate)
 
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.success
             job.result_path = str(out_path)
@@ -73,7 +81,7 @@ def generate_audio_task(
         return str(out_path)
 
     except Exception as exc:
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.failure
             job.error_message = str(exc)

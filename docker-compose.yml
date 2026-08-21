@@ -79,7 +79,7 @@ services:
       - db
     command: >
       celery -A backend.core.celery_app:celery_app worker
-      -Q video --loglevel=info --concurrency=1
+      -Q video --loglevel=info --concurrency=${VIDEO_WORKER_CONCURRENCY:-1}
 
   worker-audio:
     build:
@@ -98,7 +98,7 @@ services:
       - db
     command: >
       celery -A backend.core.celery_app:celery_app worker
-      -Q audio --loglevel=info --concurrency=2
+      -Q audio --loglevel=info --concurrency=${AUDIO_WORKER_CONCURRENCY:-2}
 
   worker-tts:
     build:
@@ -117,7 +117,7 @@ services:
       - db
     command: >
       celery -A backend.core.celery_app:celery_app worker
-      -Q tts --loglevel=info --concurrency=2
+      -Q tts --loglevel=info --concurrency=${TTS_WORKER_CONCURRENCY:-2}
 
   worker-llm:
     build:
@@ -136,9 +136,53 @@ services:
       - db
     command: >
       celery -A backend.core.celery_app:celery_app worker
-      -Q llm --loglevel=info --concurrency=1
+      -Q llm --loglevel=info --concurrency=${LLM_WORKER_CONCURRENCY:-1}
 
-  # ─── Celery Flower (monitoring) ───────────────────────────────────────────
+  # Compositing worker – merges video + audio → stream_input.mp4 (CPU only, no GPU needed)
+  worker-composite:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    env_file: backend/.env
+    volumes:
+      - output_data:/outputs
+    depends_on:
+      - redis
+      - db
+    command: >
+      celery -A backend.core.celery_app:celery_app worker
+      -Q composite --loglevel=info --concurrency=2
+
+  # Chat + idle workers – lightweight, no GPU needed
+  worker-chat-idle:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    env_file: backend/.env
+    volumes:
+      - output_data:/outputs
+    depends_on:
+      - redis
+      - db
+    command: >
+      celery -A backend.core.celery_app:celery_app worker
+      -Q chat,idle --loglevel=info --concurrency=2
+
+  # Celery Beat – triggers periodic tasks (chat poll + idle check)
+  beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    env_file: backend/.env
+    depends_on:
+      - redis
+    command: >
+      celery -A backend.core.celery_app:celery_app beat --loglevel=info
+
+  # ─── Celery Flower (monitoring UI at http://localhost:5555) ───────────────
   flower:
     build:
       context: .

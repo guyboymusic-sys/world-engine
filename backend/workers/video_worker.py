@@ -1,9 +1,7 @@
 """SkyReels V2 video generation worker."""
-import os
 import uuid
 import torch
 from pathlib import Path
-from celery import shared_task
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -14,11 +12,18 @@ from backend.core.celery_app import celery_app
 settings = get_settings()
 
 # Sync engine for Celery workers (workers run synchronously)
-_engine = create_engine(settings.database_sync_url)
-_Session = sessionmaker(bind=_engine)
+_engine = None
+_Session = None
+
+
+def _get_session_factory():
+    global _engine, _Session
+    if _Session is None:
+        _engine = create_engine(settings.database_sync_url)
+        _Session = sessionmaker(bind=_engine)
+    return _Session
 
 OUTPUT_DIR = Path("/outputs/video")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 _pipeline = None
 
@@ -26,19 +31,28 @@ _pipeline = None
 def _get_pipeline():
     global _pipeline
     if _pipeline is None:
-        from diffusers import SkyReelsVideoPipeline  # type: ignore[import]
+        # SkyReelsV2ImageToVideoPipeline is the correct class in diffusers >=0.40.0
+        from diffusers import SkyReelsV2ImageToVideoPipeline  # type: ignore[import]
 
-        _pipeline = SkyReelsVideoPipeline.from_pretrained(
+        _pipeline = SkyReelsV2ImageToVideoPipeline.from_pretrained(
             settings.skyreels_model_id,
             torch_dtype=torch.float16,
             cache_dir=settings.models_dir,
         )
-        _pipeline.enable_model_cpu_offload()
+        # Keep the entire model on GPU – designed for high-VRAM machines (>=24 GB).
+        # If you have less VRAM, swap the line below for:
+        #   _pipeline.enable_model_cpu_offload()
+        _pipeline = _pipeline.to("cuda" if torch.cuda.is_available() else "cpu")
         _pipeline.enable_vae_slicing()
+        _pipeline.enable_vae_tiling()
     return _pipeline
 
 
-@celery_app.task(name="backend.workers.video_worker.generate_video_task", bind=True)
+@celery_app.task(
+    name="backend.workers.video_worker.generate_video_task",
+    bind=True,
+    queue="video",
+)
 def generate_video_task(
     self,
     job_id: str,
@@ -48,13 +62,14 @@ def generate_video_task(
     height: int = 720,
     fps: int = 24,
 ):
-    with _Session() as db:
+    with _get_session_factory()() as db:
         job = db.get(GenerationJob, uuid.UUID(job_id))
         job.status = JobStatus.started
         job.celery_task_id = self.request.id
         db.commit()
 
     try:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         pipe = _get_pipeline()
         num_frames = duration_seconds * fps
 
@@ -73,7 +88,7 @@ def generate_video_task(
         out_path = OUTPUT_DIR / f"{job_id}.mp4"
         imageio.mimwrite(str(out_path), frames, fps=fps, quality=8)
 
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.success
             job.result_path = str(out_path)
@@ -82,7 +97,7 @@ def generate_video_task(
         return str(out_path)
 
     except Exception as exc:
-        with _Session() as db:
+        with _get_session_factory()() as db:
             job = db.get(GenerationJob, uuid.UUID(job_id))
             job.status = JobStatus.failure
             job.error_message = str(exc)
