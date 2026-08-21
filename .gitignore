@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI model weights – never commit large binary files
+/models/
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# Generated outputs
+/outputs/
