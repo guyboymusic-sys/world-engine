@@ -41,13 +41,17 @@ echo "    AudioLDM2 done."
 # Tortoise downloads its own weights on first run via tortoise-tts package.
 # We trigger a one-shot download here to pre-cache weights.
 # Source: https://huggingface.co/jbetker/tortoise-tts-v2
+# NOTE: tortoise must be installed in the active Python environment.
+#       setup.sh already activates the venv before calling this script.
 echo ""
 echo "[3/4] Pre-caching Tortoise TTS weights..."
+TORTOISE_DIR="$MODELS_DIR/tortoise"
+mkdir -p "$TORTOISE_DIR"
 python3 -c "
 import os
-os.environ['TORTOISE_MODELS_DIR'] = '$MODELS_DIR/tortoise'
+os.environ['TORTOISE_MODELS_DIR'] = '$TORTOISE_DIR'
 from tortoise.api import TextToSpeech
-tts = TextToSpeech(models_dir='$MODELS_DIR/tortoise')
+tts = TextToSpeech(models_dir='$TORTOISE_DIR')
 print('    Tortoise TTS ready.')
 "
 

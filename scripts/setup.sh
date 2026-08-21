@@ -32,7 +32,14 @@ bash scripts/install_models.sh /models
 echo "[4/5] Starting Docker services (db, redis, nginx-rtmp)..."
 docker compose up -d db redis nginx-rtmp
 echo "      Waiting for DB to be ready..."
-sleep 10
+for i in $(seq 1 30); do
+    if docker compose exec -T db pg_isready -U worldengine >/dev/null 2>&1; then
+        echo "      DB is ready."
+        break
+    fi
+    echo "      Attempt $i/30 – DB not ready yet, waiting 2s..."
+    sleep 2
+done
 
 # 5. Run database migrations
 echo "[5/5] Running database migrations..."

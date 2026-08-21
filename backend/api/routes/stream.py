@@ -1,7 +1,6 @@
 """Stream control endpoints – start/stop RTMP push."""
-import uuid
-import subprocess
 import asyncio
+import subprocess
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -16,13 +15,13 @@ settings = get_settings()
 _stream_process: subprocess.Popen | None = None
 
 
-class StreamSessionOut:
-    pass
-
-
 @router.post("/start", status_code=200)
 async def start_stream(db: AsyncSession = Depends(get_db)):
     global _stream_process
+
+    # Refuse to double-start
+    if _stream_process is not None and _stream_process.poll() is None:
+        raise HTTPException(status_code=409, detail="Stream is already running")
 
     # Mark any existing active sessions as ended
     result = await db.execute(select(StreamSession).where(StreamSession.is_active == True))  # noqa: E712
@@ -33,11 +32,14 @@ async def start_stream(db: AsyncSession = Depends(get_db)):
     db.add(session)
     await db.commit()
 
-    rtmp_url = f"{settings.rtmp_server}/live/{settings.stream_key}"
+    # Prefer YouTube RTMP; fall back to local nginx-rtmp
     if settings.youtube_stream_key:
         rtmp_url = f"rtmp://a.rtmp.youtube.com/live2/{settings.youtube_stream_key}"
+    else:
+        rtmp_url = f"{settings.rtmp_server}/live/{settings.stream_key}"
 
-    # Start FFmpeg RTMP push from local RTMP source
+    # /outputs/stream_input.mp4 is created by the compositing worker.
+    # -stream_loop -1 loops it indefinitely until new content is composited in.
     cmd = [
         "ffmpeg",
         "-re",
@@ -58,6 +60,19 @@ async def start_stream(db: AsyncSession = Depends(get_db)):
     ]
 
     _stream_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Give FFmpeg a moment to start and detect immediate failure (e.g. missing file)
+    await asyncio.sleep(1)
+    if _stream_process.poll() is not None:
+        _stream_process = None
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "FFmpeg failed to start. Make sure /outputs/stream_input.mp4 exists. "
+                "Run POST /api/v1/composite/build first."
+            ),
+        )
+
     return {"status": "streaming", "rtmp_url": rtmp_url, "session_id": str(session.id)}
 
 
