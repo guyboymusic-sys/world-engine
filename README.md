@@ -2,7 +2,7 @@
 
 **AI-powered interactive streaming game with YouTube Live donations**
 
-World Engine is a real-time, AI-driven game that runs live on YouTube. Donations from viewers trigger AI-generated events: narrated stories (Mistral 7B), ambient soundscapes (AudioLDM2), character voices (Tortoise TTS), and cinematic video clips (SkyReels V2), all composited and streamed back live via RTMP.
+World Engine is a real-time, AI-driven game that runs live on YouTube. Donations from viewers trigger AI-generated events: narrated stories (Mistral 7B), ambient soundscapes (AudioLDM2), character voices (Tortoise TTS), and cinematic video clips (ModelScope Text-to-Video), all composited and streamed back live via RTMP.
 
 ---
 
@@ -17,7 +17,7 @@ YouTube Live ──► Donation Webhook ──► FastAPI (REST API)
                          LLM         Audio        Video
                          Worker      Worker       Worker
                            │           │             │
-                      Mistral 7B  AudioLDM2    SkyReels V2
+                      Mistral 7B  AudioLDM2    ModelScope T2V
                            │           │             │
                            └───────────┴─────────────┘
                                        │
@@ -98,7 +98,7 @@ bash scripts/install_models.sh /path/to/models
 **Models downloaded:**
 | Model | Hugging Face ID | Size |
 |---|---|---|
-| SkyReels V2 (I2V 14B 720p) | `Skywork/SkyReels-V2-I2V-14B-720P` | ~28 GB |
+| ModelScope Text-to-Video | `damo-vilab/text-to-video-ms-1.7b` | ~10-12 GB |
 | AudioLDM2 Large | `cvssp/audioldm2-large` | ~5 GB |
 | Tortoise TTS | `jbetker/tortoise-tts-v2` (auto-downloaded) | ~8 GB |
 | Mistral 7B Instruct v0.3 | `mistralai/Mistral-7B-Instruct-v0.3` | ~14 GB |
@@ -137,7 +137,7 @@ celery -A backend.core.celery_app:celery_app worker -Q llm --loglevel=info --con
 
 Full interactive docs available at `http://localhost:8000/docs` (Swagger UI).
 
-### Video Generation (SkyReels V2)
+### Video Generation (ModelScope Text-to-Video)
 
 ```http
 POST /api/v1/video/generate
@@ -221,7 +221,7 @@ world-engine/
 ├── backend/
 │   ├── api/
 │   │   ├── routes/          # FastAPI route handlers
-│   │   │   ├── video.py     # SkyReels V2 endpoints
+│   │   │   ├── video.py     # Video generation endpoints
 │   │   │   ├── audio.py     # AudioLDM2 endpoints
 │   │   │   ├── tts.py       # Tortoise TTS endpoints
 │   │   │   ├── llm.py       # Mistral 7B endpoints
@@ -238,7 +238,7 @@ world-engine/
 │   ├── models/
 │   │   └── models.py        # ORM models
 │   ├── workers/
-│   │   ├── video_worker.py  # SkyReels V2 Celery task
+│   │   ├── video_worker.py  # Video generation Celery task
 │   │   ├── audio_worker.py  # AudioLDM2 Celery task
 │   │   ├── tts_worker.py    # Tortoise TTS Celery task
 │   │   └── llm_worker.py    # Mistral 7B Celery task
@@ -270,7 +270,7 @@ All settings are in `backend/.env` (copy from `backend/.env.example`):
 | `REDIS_URL` | Redis URL for Celery |
 | `SECRET_KEY` | JWT signing key |
 | `MODELS_DIR` | Path to AI model weights |
-| `SKYREELS_MODEL_ID` | Hugging Face model ID for SkyReels |
+| `VIDEO_MODEL_ID` | Hugging Face model ID for video generation |
 | `AUDIOLDM2_MODEL_ID` | Hugging Face model ID for AudioLDM2 |
 | `MISTRAL_MODEL_ID` | Hugging Face model ID for Mistral |
 | `YOUTUBE_STREAM_KEY` | YouTube Live RTMP stream key |

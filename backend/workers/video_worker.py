@@ -1,4 +1,4 @@
-"""SkyReels V2 video generation worker."""
+"""Video generation worker (ModelScope text-to-video)."""
 import uuid
 import torch
 from pathlib import Path
@@ -31,20 +31,26 @@ _pipeline = None
 def _get_pipeline():
     global _pipeline
     if _pipeline is None:
-        # SkyReelsV2ImageToVideoPipeline is the correct class in diffusers >=0.40.0
-        from diffusers import SkyReelsV2ImageToVideoPipeline  # type: ignore[import]
+        from diffusers import DiffusionPipeline
 
-        _pipeline = SkyReelsV2ImageToVideoPipeline.from_pretrained(
-            settings.skyreels_model_id,
+        _pipeline = DiffusionPipeline.from_pretrained(
+            settings.video_model_id,
             torch_dtype=torch.float16,
             cache_dir=settings.models_dir,
         )
-        # Keep the entire model on GPU – designed for high-VRAM machines (>=24 GB).
-        # If you have less VRAM, swap the line below for:
-        #   _pipeline.enable_model_cpu_offload()
-        _pipeline = _pipeline.to("cuda" if torch.cuda.is_available() else "cpu")
-        _pipeline.enable_vae_slicing()
-        _pipeline.enable_vae_tiling()
+
+        if torch.cuda.is_available():
+            if hasattr(_pipeline, "enable_model_cpu_offload"):
+                _pipeline.enable_model_cpu_offload()
+            else:
+                _pipeline = _pipeline.to("cuda")
+        else:
+            _pipeline = _pipeline.to("cpu")
+
+        if hasattr(_pipeline, "enable_vae_slicing"):
+            _pipeline.enable_vae_slicing()
+        if hasattr(_pipeline, "enable_vae_tiling"):
+            _pipeline.enable_vae_tiling()
     return _pipeline
 
 

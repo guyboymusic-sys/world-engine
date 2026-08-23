@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # AI models
     models_dir: str = "/models"
-    skyreels_model_id: str = "Skywork/SkyReels-V2-I2V-14B-720P"
+    video_model_id: str = "damo-vilab/text-to-video-ms-1.7b"
     audioldm2_model_id: str = "cvssp/audioldm2-large"
     mistral_model_id: str = "mistralai/Mistral-7B-Instruct-v0.3"
     # Tortoise TTS stores its weights in a sub-directory to avoid clashes

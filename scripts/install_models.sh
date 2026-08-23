@@ -1,28 +1,28 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # install_models.sh – Download all AI models to /models
 # Usage: bash scripts/install_models.sh [models_dir]
 # Requires: huggingface-hub (pip install huggingface-hub)
 
-set -euo pipefail
+set -eu
 
 MODELS_DIR="${1:-/models}"
 mkdir -p "$MODELS_DIR"
 
 echo "==> Installing models to $MODELS_DIR"
 
-# ── 1. SkyReels V2 (Image-to-Video, 14B, 720p) ────────────────────────────
-# Source: https://huggingface.co/Skywork/SkyReels-V2-I2V-14B-720P
+# ── 1. ModelScope Text-to-Video ─────────────────────────────────────────────
+# Source: https://huggingface.co/damo-vilab/text-to-video-ms-1.7b
 echo ""
-echo "[1/4] Downloading SkyReels V2 (Skywork/SkyReels-V2-I2V-14B-720P)..."
+echo "[1/4] Downloading video model (damo-vilab/text-to-video-ms-1.7b)..."
 python3 -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
-    repo_id='Skywork/SkyReels-V2-I2V-14B-720P',
+    repo_id='damo-vilab/text-to-video-ms-1.7b',
     cache_dir='$MODELS_DIR',
     ignore_patterns=['*.bin'],   # prefer safetensors
 )
 "
-echo "    SkyReels V2 done."
+echo "    Video model done."
 
 # ── 2. AudioLDM2 Large ────────────────────────────────────────────────────
 # Source: https://huggingface.co/cvssp/audioldm2-large
