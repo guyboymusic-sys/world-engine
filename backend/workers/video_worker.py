@@ -82,6 +82,8 @@ def generate_video_task(
         output = pipe(
             prompt=prompt,
             num_frames=num_frames,
+            height=height,
+            width=width,
             num_inference_steps=50,
             guidance_scale=7.5,
         )

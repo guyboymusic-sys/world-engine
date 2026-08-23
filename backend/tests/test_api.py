@@ -43,6 +43,6 @@ def test_video_worker_loads_configured_pipeline():
 
     mock_diffusion_pipeline.from_pretrained.assert_called_once_with(
         video_worker.settings.video_model_id,
-        torch_dtype="float16",
+        torch_dtype=video_worker.torch.float16,
         cache_dir=video_worker.settings.models_dir,
     )
