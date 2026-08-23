@@ -1,0 +1,78 @@
+# Verified dependency set for Python 3.11 / CUDA workers.
+# Notes on pin choices:
+# - FastAPI + Pydantic family are pinned to mutually compatible versions.
+# - Video generation uses ModelScope Text-to-Video via diffusers 0.27.x to avoid
+#   the SkyReels/diffusers 0.40+ huggingface-hub resolver conflict on RunPod.
+# - huggingface-hub is pinned below 1.0 to satisfy both transformers and diffusers.
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.30
+alembic==1.13.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Redis / task queue
+celery==5.4.0
+redis==5.0.4
+kombu==5.3.5
+
+# AI / ML core (PyTorch 2.3 family, Python 3.11 compatible wheels)
+torch==2.3.0
+torchvision==0.18.0
+torchaudio==2.3.0
+transformers==4.39.3
+diffusers==0.27.2
+accelerate==0.29.3
+huggingface-hub==0.23.5
+safetensors==0.4.3
+einops==0.7.0
+sentencepiece==0.2.0
+
+# AudioLDM2
+librosa==0.10.2
+soundfile==0.12.1
+audioread==3.0.1
+
+# Tortoise TTS
+tortoise-tts==3.0.0
+
+# Video processing
+opencv-python-headless==4.9.0.80
+imageio==2.34.1
+imageio-ffmpeg==0.5.1
+ffmpeg-python==0.2.0
+
+# HTTP client
+httpx==0.27.0
+aiohttp==3.9.5
+
+# Config & env
+pydantic==2.7.4
+pydantic-settings==2.2.1
+pydantic-extra-types==2.8.2
+python-dotenv==1.0.1
+
+# Auth & security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Websocket
+websockets==12.0
+
+# YouTube / donations
+google-api-python-client==2.131.0
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+
+# Logging & monitoring
+structlog==24.1.0
+prometheus-client==0.20.0
+
+# Testing
+pytest==8.2.0
+pytest-asyncio==0.23.7
