@@ -29,6 +29,8 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Suppress Celery 6.0 deprecation warning; keep retry behaviour on startup.
+    broker_connection_retry_on_startup=True,
     # Periodic tasks (requires `celery beat`)
     beat_schedule={
         # Poll YouTube Live Chat every 15 seconds
