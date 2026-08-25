@@ -60,10 +60,16 @@ done
 # 5. Run database migrations
 echo "[5/5] Running database migrations..."
 export DATABASE_URL=$(grep '^DATABASE_URL=' backend/.env | cut -d= -f2-)
+# Alembic env.py reads DATABASE_URL from settings; ensure it uses the asyncpg driver.
+# If the URL still uses the bare postgresql:// scheme, rewrite it for asyncpg.
+DATABASE_URL=$(echo "$DATABASE_URL" | sed 's|^postgresql://|postgresql+asyncpg://|')
+export DATABASE_URL
 alembic upgrade head
 
 echo ""
 echo "=== Setup complete! ==="
 echo "Start API:     uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-echo "Start workers: docker compose up -d worker-video worker-audio worker-tts worker-llm"
+echo "Start workers (increase file-descriptor limit first):"
+echo "  ulimit -n 65536"
+echo "  celery -A backend.core.celery_app worker --loglevel=info --concurrency=8 --pool=prefork"
 echo "Full stack:    docker compose up -d"

@@ -25,13 +25,21 @@ kombu==5.3.5
 torch==2.3.0
 torchvision==0.18.0
 torchaudio==2.3.0
-transformers==4.39.3
+# Pin to 4.31.0 to satisfy tortoise-tts==3.0.0's strict requirement.
+transformers==4.31.0
 diffusers==0.27.2
 accelerate==0.29.3
 huggingface-hub==0.23.5
 safetensors==0.4.3
 einops==0.7.0
 sentencepiece==0.2.0
+# Required by torch
+sympy==1.12
+networkx==3.3
+# Required by accelerate
+psutil==5.9.8
+# Required by diffusers
+importlib-metadata==7.1.0
 
 # AudioLDM2
 librosa==0.10.2
