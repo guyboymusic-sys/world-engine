@@ -4,7 +4,7 @@ This repository now supports one-command startup for local CPU/GPU hosts.
 
 ## What was fixed
 
-1. Alembic now runs with `DATABASE_SYNC_URL` (sync engine) to avoid async migration issues.
+1. Alembic now runs with a sync URL for migrations (`DATABASE_SYNC_URL`, or a sync fallback derived from `DATABASE_URL`).
 2. Workers no longer require manual `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` exports.
 3. All 5 workers are started by one script with unique node names.
 4. `backend/.env.example` now includes optional Celery override variables.
