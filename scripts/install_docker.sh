@@ -20,16 +20,17 @@ run_as_root() {
 update_docker_repo_file() {
   local repo_line="$1"
   local docker_list_file="$APT_SOURCES_DIR/docker.list"
-  local tmp_file
 
-  tmp_file="$(mktemp)"
+  (
+    tmp_file="$(mktemp)"
+    trap 'rm -f "$tmp_file"' EXIT
 
-  if [ -f "$docker_list_file" ]; then
-    grep -Fv 'https://download.docker.com/linux/' "$docker_list_file" > "$tmp_file" || true
-  fi
-  printf '%s\n' "$repo_line" >> "$tmp_file"
-  run_as_root install -m 0644 "$tmp_file" "$docker_list_file"
-  rm -f "$tmp_file"
+    if [ -f "$docker_list_file" ]; then
+      grep -Fv 'https://download.docker.com/linux/' "$docker_list_file" > "$tmp_file" || true
+    fi
+    printf '%s\n' "$repo_line" >> "$tmp_file"
+    run_as_root install -m 0644 "$tmp_file" "$docker_list_file"
+  )
 }
 
 install_docker_packages() {
