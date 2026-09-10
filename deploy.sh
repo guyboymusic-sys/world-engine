@@ -43,6 +43,16 @@ else
 fi
 export PYTHONPATH="$ROOT_DIR:${PYTHONPATH:-}"
 
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo "Installing Docker..."
+  bash "$ROOT_DIR/scripts/install_docker.sh"
+fi
+
+docker compose version >/dev/null 2>&1 || {
+  echo "Docker Compose is not available"
+  exit 1
+}
+
 docker compose up -d db redis
 
 db_ready=0
