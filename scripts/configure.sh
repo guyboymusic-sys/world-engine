@@ -6,12 +6,68 @@ cd "$ROOT_DIR"
 
 echo "⚙️  World Engine - Configuration Phase"
 
-rewrite_service_host() {
-  local value="$1"
-  local from_host="$2"
-  local to_host="$3"
+load_env_file() {
+  local env_file="$1"
+  local line key value
 
-  printf '%s\n' "$value" | sed -E "s#(//|@)${from_host}([:/])#\1${to_host}\2#"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*)
+        continue
+        ;;
+    esac
+
+    line="${line#export }"
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    case "$key" in
+      [A-Za-z_][A-Za-z0-9_]*)
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    value="${value%$'\r'}"
+    if [[ "$value" =~ ^\".*\"$ || "$value" =~ ^\'.*\'$ ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  done < "$env_file"
+}
+
+rewrite_service_host() {
+  python - "$1" "$2" "$3" <<'PY'
+from urllib.parse import urlsplit, urlunsplit
+import sys
+
+value, from_host, to_host = sys.argv[1:4]
+parts = urlsplit(value)
+if not parts.scheme or not parts.netloc:
+    print(value)
+    raise SystemExit
+
+netloc = parts.netloc
+if "@" in netloc:
+    userinfo, hostpart = netloc.rsplit("@", 1)
+    prefix = f"{userinfo}@"
+else:
+    prefix = ""
+    hostpart = netloc
+
+if ":" in hostpart:
+    host, remainder = hostpart.split(":", 1)
+    if host == from_host:
+        hostpart = f"{to_host}:{remainder}"
+else:
+    if hostpart == from_host:
+        hostpart = to_host
+
+print(urlunsplit((parts.scheme, f"{prefix}{hostpart}", parts.path, parts.query, parts.fragment)))
+PY
 }
 
 if [ ! -f ".venv/bin/activate" ]; then
@@ -27,10 +83,7 @@ if [ ! -f "backend/.env" ]; then
 fi
 
 if [ -f "backend/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source backend/.env
-  set +a
+  load_env_file "backend/.env"
 fi
 
 export PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
@@ -53,7 +106,7 @@ export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
 
 db_ready=0
 for i in $(seq 1 30); do
-  if docker compose exec -T db pg_isready -U worldengine >/dev/null 2>&1; then
+  if pg_isready -d "$DATABASE_SYNC_URL" >/dev/null 2>&1; then
     echo "✅ PostgreSQL ready"
     db_ready=1
     break
@@ -68,7 +121,7 @@ fi
 
 redis_ready=0
 for i in $(seq 1 30); do
-  if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+  if redis-cli -u "$REDIS_URL" ping >/dev/null 2>&1; then
     echo "✅ Redis ready"
     redis_ready=1
     break

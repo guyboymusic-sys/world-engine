@@ -432,6 +432,9 @@ def test_install_script_sets_up_python_and_starts_db_and_redis(tmp_path):
     assert "🔧 World Engine - Installation Phase" in result.stdout
     assert "✅ Installation complete!" in result.stdout
     assert (tmp_path / ".venv" / "bin" / "activate").exists()
+    apt_log = (tmp_path / "apt-get.log").read_text()
+    assert "postgresql-client" in apt_log
+    assert "redis-tools" in apt_log
     assert "docker-ce" in (tmp_path / "apt-get.log").read_text()
     assert "compose-up" in (tmp_path / "docker.log").read_text()
 
@@ -440,21 +443,21 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
     _write_executable(
-        fakebin / "docker",
+        fakebin / "pg_isready",
         """\
         #!/bin/bash
         set -euo pipefail
-        case "$*" in
-          "compose exec -T db pg_isready -U worldengine")
-            printf 'db-ready\\n' >> "${STATE_DIR:?}/docker.log"
-            exit 0
-            ;;
-          "compose exec -T redis redis-cli ping")
-            printf 'redis-ready\\n' >> "${STATE_DIR:?}/docker.log"
-            exit 0
-            ;;
-        esac
-        exit 1
+        printf '%s\\n' "$*" >> "${STATE_DIR:?}/pg.log"
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        printf '%s\\n' "$*" >> "${STATE_DIR:?}/redis.log"
+        exit 0
         """,
     )
     (tmp_path / "scripts").mkdir()
@@ -498,6 +501,8 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
     assert "✅ Redis ready" in result.stdout
     assert "✅ Configuration complete!" in result.stdout
     assert (tmp_path / "backend" / ".env").exists()
+    assert (tmp_path / "pg.log").read_text().strip() == "-d postgresql://localhost:5432/worldengine"
+    assert (tmp_path / "redis.log").read_text().strip() == "-u redis://localhost:6379/0 ping"
     assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
     assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
     assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
@@ -555,16 +560,19 @@ def test_configure_script_rewrites_service_hostnames_with_auth_and_query_params(
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
     _write_executable(
-        fakebin / "docker",
+        fakebin / "pg_isready",
         """\
         #!/bin/bash
         set -euo pipefail
-        case "$*" in
-          "compose exec -T db pg_isready -U worldengine"|"compose exec -T redis redis-cli ping")
-            exit 0
-            ;;
-        esac
-        exit 1
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        exit 0
         """,
     )
     (tmp_path / "scripts").mkdir()
@@ -604,6 +612,57 @@ def test_configure_script_rewrites_service_hostnames_with_auth_and_query_params(
     assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://user@localhost:5432/worldengine?sslmode=disable"
     assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://user@localhost:5432/worldengine?connect_timeout=10"
     assert (tmp_path / "redis_url.log").read_text().strip() == "redis://user@localhost:6379/2?health_check_interval=30"
+
+
+def test_configure_script_loads_env_without_executing_shell_code(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    marker_path = tmp_path / "should-not-run"
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_SYNC_URL=postgresql://localhost:5432/worldengine\n"
+        "REDIS_URL=redis://localhost:6379/0\n"
+        f"MALICIOUS=$(touch {marker_path})\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                exit 0
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert not marker_path.exists()
 
 
 def test_run_script_delegates_to_runtime_launcher(tmp_path):

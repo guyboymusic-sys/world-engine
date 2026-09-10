@@ -6,6 +6,35 @@ cd "$ROOT_DIR"
 
 echo "🔧 World Engine - Installation Phase"
 
+run_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "System package installation requires root or sudo"
+    exit 1
+  fi
+}
+
+install_system_packages() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Automatic package installation currently supports Debian/Ubuntu apt-based systems only"
+    exit 1
+  fi
+
+  run_as_root apt-get update -qq
+  run_as_root apt-get install -y -qq \
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
+    git \
+    curl \
+    wget \
+    postgresql-client \
+    redis-tools
+}
+
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "Installing Docker..."
@@ -33,6 +62,8 @@ require_docker() {
   echo "Starting Docker..."
   bash "$ROOT_DIR/scripts/install_docker.sh"
 }
+
+install_system_packages
 
 if command -v python3.11 >/dev/null 2>&1; then
   PYTHON_BIN="python3.11"
