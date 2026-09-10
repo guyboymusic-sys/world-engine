@@ -301,7 +301,7 @@ def test_install_docker_reports_unsupported_platform_when_apt_is_missing(tmp_pat
     )
 
     assert result.returncode == 1
-    assert "Automatic Docker installation currently supports apt-based systems only" in result.stdout
+    assert "Automatic Docker installation currently supports Debian/Ubuntu apt-based systems only" in result.stdout
 
 
 def test_install_docker_rewrites_only_the_docker_repo_entry(tmp_path):
@@ -339,7 +339,7 @@ def test_install_docker_rewrites_only_the_docker_repo_entry(tmp_path):
     assert sum("https://download.docker.com/linux/" in line for line in docker_sources) == 1
 
 
-def test_deploy_fails_fast_when_compose_is_missing_even_if_docker_exists(tmp_path):
+def test_deploy_checks_daemon_before_failing_on_missing_compose(tmp_path):
     fakebin = tmp_path / "fakebin"
     _prepare_fakebin(fakebin)
     _create_fake_docker_without_compose(fakebin)
@@ -351,7 +351,8 @@ def test_deploy_fails_fast_when_compose_is_missing_even_if_docker_exists(tmp_pat
         """\
         #!/bin/bash
         printf 'installer-called\\n' >> "${STATE_DIR:?}/install.log"
-        exit 0
+        echo "Docker Compose plugin is required but not installed"
+        exit 1
         """,
     )
     _write_executable(
@@ -373,5 +374,27 @@ def test_deploy_fails_fast_when_compose_is_missing_even_if_docker_exists(tmp_pat
     )
 
     assert result.returncode == 1
-    assert "Docker Compose is not available" in result.stdout
-    assert not (tmp_path / "install.log").exists()
+    assert "Starting Docker..." in result.stdout
+    assert "Docker Compose plugin is required but not installed" in result.stdout
+    assert (tmp_path / "install.log").exists()
+
+
+def test_install_docker_uses_upstream_repo_for_ubuntu_derivatives(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+    (tmp_path / "os-release").write_text("ID=linuxmint\nID_LIKE='ubuntu debian'\nUBUNTU_CODENAME=jammy\n")
+
+    subprocess.run(
+        ["bash", "scripts/install_docker.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    docker_sources = (tmp_path / "apt" / "sources.list.d" / "docker.list").read_text()
+    assert "https://download.docker.com/linux/ubuntu jammy stable" in docker_sources
+    assert "https://download.docker.com/linux/linuxmint" not in docker_sources

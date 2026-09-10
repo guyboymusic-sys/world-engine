@@ -17,6 +17,28 @@ run_as_root() {
   fi
 }
 
+resolve_docker_repo_distribution() {
+  case "${ID:-}" in
+    ubuntu|debian)
+      printf '%s\n' "$ID"
+      return 0
+      ;;
+  esac
+
+  case " ${ID_LIKE:-} " in
+    *" ubuntu "*)
+      printf '%s\n' "ubuntu"
+      return 0
+      ;;
+    *" debian "*)
+      printf '%s\n' "debian"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 update_docker_repo_file() {
   local repo_line="$1"
   local docker_list_file="$APT_SOURCES_DIR/docker.list"
@@ -35,20 +57,26 @@ update_docker_repo_file() {
 
 install_docker_packages() {
   export DEBIAN_FRONTEND=noninteractive
+  local repo_distribution
 
   . "$OS_RELEASE_FILE"
+
+  if ! repo_distribution="$(resolve_docker_repo_distribution)"; then
+    echo "Automatic Docker installation currently supports Debian/Ubuntu apt-based systems only"
+    exit 1
+  fi
 
   run_as_root apt-get update
   run_as_root apt-get install -y ca-certificates curl gnupg
   run_as_root install -m 0755 -d "$APT_KEYRINGS_DIR" "$APT_SOURCES_DIR"
 
   if [ ! -f "$APT_KEYRINGS_DIR/docker.asc" ]; then
-    run_as_root curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o "$APT_KEYRINGS_DIR/docker.asc"
+    run_as_root curl -fsSL "https://download.docker.com/linux/${repo_distribution}/gpg" -o "$APT_KEYRINGS_DIR/docker.asc"
     run_as_root chmod a+r "$APT_KEYRINGS_DIR/docker.asc"
   fi
 
   arch="$(dpkg --print-architecture)"
-  repo_url="https://download.docker.com/linux/${ID}"
+  repo_url="https://download.docker.com/linux/${repo_distribution}"
   repo_suite="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
   if [ -z "${repo_suite}" ]; then
     echo "Unable to determine apt repository codename for Docker"
@@ -92,7 +120,7 @@ start_docker() {
 
 if ! command -v docker >/dev/null 2>&1; then
   if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Automatic Docker installation currently supports apt-based systems only"
+    echo "Automatic Docker installation currently supports Debian/Ubuntu apt-based systems only"
     exit 1
   fi
   install_docker_packages
