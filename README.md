@@ -50,14 +50,6 @@ YouTube Live ──► Donation Webhook ──► FastAPI (REST API)
 
 ## Quick Start
 
-### One-command deployment
-
-```bash
-./deploy.sh
-```
-
-This runs dependency install, infrastructure startup, database migration, API startup, and all workers.
-
 ### 1. Clone and configure
 
 ```bash
@@ -67,7 +59,31 @@ cp backend/.env.example backend/.env
 # Edit backend/.env with your secrets
 ```
 
-### 2. Run setup (downloads all models)
+### 2. Install dependencies and core services
+
+```bash
+bash scripts/install.sh
+```
+
+This creates `.venv`, installs Python dependencies, installs or starts Docker when needed, and starts the PostgreSQL and Redis containers.
+
+### 3. Configure the application
+
+```bash
+bash scripts/configure.sh
+```
+
+This copies `backend/.env` when needed, waits for PostgreSQL and Redis, and runs the Alembic migrations.
+
+### 4. Start the runtime stack
+
+```bash
+bash scripts/run.sh
+```
+
+This starts the API server plus the Celery workers and keeps them running in the foreground.
+
+### Optional: full model setup (downloads all models)
 
 ```bash
 bash scripts/setup.sh
@@ -79,11 +95,13 @@ This will:
 3. Start infrastructure containers (PostgreSQL, Redis, nginx-rtmp)
 4. Run database migrations
 
-### 3. Start the full stack
+### Optional: legacy one-command deployment
 
 ```bash
-docker compose up -d
+./deploy.sh
 ```
+
+`deploy.sh` still runs the end-to-end flow in one command, but the recommended setup is now the separate `install.sh`, `configure.sh`, and `run.sh` phases.
 
 ---
 
@@ -259,6 +277,9 @@ world-engine/
 ├── streaming/
 │   └── nginx-rtmp.conf      # RTMP server config
 ├── scripts/
+│   ├── install.sh           # Install dependencies and start db/redis
+│   ├── configure.sh         # Apply env defaults and run migrations
+│   ├── run.sh               # Start API and worker processes
 │   ├── install_models.sh    # Download all AI models
 │   └── setup.sh             # Full environment setup
 ├── docker-compose.yml

@@ -398,3 +398,422 @@ def test_install_docker_uses_upstream_repo_for_ubuntu_derivatives(tmp_path):
     docker_sources = (tmp_path / "apt" / "sources.list.d" / "docker.list").read_text()
     assert "https://download.docker.com/linux/ubuntu jammy stable" in docker_sources
     assert "https://download.docker.com/linux/linuxmint" not in docker_sources
+
+
+def _create_fake_venv(repo_root: Path, scripts: dict[str, str]) -> None:
+    bin_dir = repo_root / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "activate").write_text(
+        "export PATH=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd):$PATH\"\n"
+    )
+    for name, content in scripts.items():
+        _write_executable(bin_dir / name, content)
+
+
+def test_install_script_sets_up_python_and_starts_db_and_redis(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install.sh", tmp_path / "scripts" / "install.sh")
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+    (tmp_path / "backend" / "requirements.txt").write_text("")
+    (tmp_path / "os-release").write_text("ID=ubuntu\nVERSION_CODENAME=jammy\n")
+
+    result = subprocess.run(
+        ["bash", "scripts/install.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "🔧 World Engine - Installation Phase" in result.stdout
+    assert "✅ Installation complete!" in result.stdout
+    assert (tmp_path / ".venv" / "bin" / "activate").exists()
+    apt_log = (tmp_path / "apt-get.log").read_text()
+    assert "postgresql-client" in apt_log
+    assert "redis-tools" in apt_log
+    assert "docker-ce" in (tmp_path / "apt-get.log").read_text()
+    assert "compose-up" in (tmp_path / "docker.log").read_text()
+
+
+def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        printf '%s\\n' "$*" >> "${STATE_DIR:?}/pg.log"
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        printf '%s\\n' "$*" >> "${STATE_DIR:?}/redis.log"
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_URL=postgresql+asyncpg://db:5432/worldengine\n"
+        "DATABASE_SYNC_URL=postgresql://db:5432/worldengine\n"
+        "REDIS_URL=redis://redis:6379/0\n"
+        "CELERY_BROKER_URL=redis://redis:6379/1\n"
+        "CELERY_RESULT_BACKEND=redis://redis:6379/2\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                printf '%s\\n' "$CELERY_BROKER_URL" > "${STATE_DIR:?}/celery_broker.log"
+                printf '%s\\n' "$CELERY_RESULT_BACKEND" > "${STATE_DIR:?}/celery_result.log"
+                printf '%s\\n' "$PYTHONPATH" > "${STATE_DIR:?}/pythonpath.log"
+                printf '%s\\n' "$*" >> "${STATE_DIR:?}/alembic.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    result = subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "⚙️  World Engine - Configuration Phase" in result.stdout
+    assert "✅ PostgreSQL ready" in result.stdout
+    assert "✅ Redis ready" in result.stdout
+    assert "✅ Configuration complete!" in result.stdout
+    assert (tmp_path / "backend" / ".env").exists()
+    assert (tmp_path / "pg.log").read_text().strip() == "-d postgresql://localhost:5432/worldengine"
+    assert (tmp_path / "redis.log").read_text().strip() == "-u redis://localhost:6379/0 ping"
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
+    assert (tmp_path / "celery_broker.log").read_text().strip() == "redis://localhost:6379/1"
+    assert (tmp_path / "celery_result.log").read_text().strip() == "redis://localhost:6379/2"
+    assert (tmp_path / "pythonpath.log").read_text().strip() == str(tmp_path)
+    assert (tmp_path / "alembic.log").read_text().strip() == "upgrade head"
+
+
+def test_install_script_reports_docker_permission_errors_without_reinstalling(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    _write_executable(
+        fakebin / "docker",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        case "$*" in
+          "compose version")
+            exit 0
+            ;;
+          "info")
+            echo "Got permission denied while trying to connect to the Docker daemon socket" >&2
+            exit 1
+            ;;
+        esac
+        exit 1
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install.sh", tmp_path / "scripts" / "install.sh")
+    _write_executable(
+        tmp_path / "scripts" / "install_docker.sh",
+        """\
+        #!/bin/bash
+        printf 'installer-called\\n' >> "${STATE_DIR:?}/install.log"
+        exit 0
+        """,
+    )
+    (tmp_path / "backend" / "requirements.txt").write_text("")
+
+    result = subprocess.run(
+        ["bash", "scripts/install.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "cannot access the Docker daemon" in result.stdout
+    assert not (tmp_path / "install.log").exists()
+
+
+def test_configure_script_rewrites_service_hostnames_with_auth_and_query_params(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_URL=postgresql+asyncpg://user@db:5432/worldengine?sslmode=disable\n"
+        "DATABASE_SYNC_URL=postgresql://user@db:5432/worldengine?connect_timeout=10\n"
+        "REDIS_URL=redis://user@redis:6379/2?health_check_interval=30\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://user@localhost:5432/worldengine?sslmode=disable"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://user@localhost:5432/worldengine?connect_timeout=10"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://user@localhost:6379/2?health_check_interval=30"
+
+
+def test_configure_script_loads_env_without_executing_shell_code(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    marker_path = tmp_path / "should-not-run"
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_SYNC_URL=postgresql://localhost:5432/worldengine\n"
+        "REDIS_URL=redis://localhost:6379/0\n"
+        f"MALICIOUS=$(touch {marker_path})\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                exit 0
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert not marker_path.exists()
+
+
+def test_configure_script_preserves_ipv6_host_urls(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_URL=postgresql+asyncpg://[::1]:5432/worldengine\n"
+        "DATABASE_SYNC_URL=postgresql://[::1]:5432/worldengine\n"
+        "REDIS_URL=redis://[::1]:6379/0\n"
+        "CELERY_BROKER_URL=redis://[::1]:6379/1\n"
+        "CELERY_RESULT_BACKEND=redis://[::1]:6379/2\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                printf '%s\\n' "$CELERY_BROKER_URL" > "${STATE_DIR:?}/celery_broker.log"
+                printf '%s\\n' "$CELERY_RESULT_BACKEND" > "${STATE_DIR:?}/celery_result.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://[::1]:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://[::1]:5432/worldengine"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://[::1]:6379/0"
+    assert (tmp_path / "celery_broker.log").read_text().strip() == "redis://[::1]:6379/1"
+    assert (tmp_path / "celery_result.log").read_text().strip() == "redis://[::1]:6379/2"
+
+
+def test_configure_script_parses_quoted_env_values_with_whitespace(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "  # comment with leading whitespace\n"
+        'DATABASE_URL = "postgresql+asyncpg://db:5432/worldengine"\n'
+        "DATABASE_SYNC_URL = 'postgresql://db:5432/worldengine'\n"
+        'REDIS_URL = "redis://redis:6379/0"\n'
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
+
+
+def test_run_script_delegates_to_runtime_launcher(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "run.sh", tmp_path / "scripts" / "run.sh")
+    _write_executable(
+        tmp_path / "scripts" / "run_all.sh",
+        """\
+        #!/bin/bash
+        printf 'run-all\\n' >> "${STATE_DIR:?}/run.log"
+        """,
+    )
+    _create_fake_venv(tmp_path, {})
+
+    env = os.environ.copy()
+    env["STATE_DIR"] = str(tmp_path)
+
+    result = subprocess.run(
+        ["bash", "scripts/run.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "🚀 World Engine - Running Phase" in result.stdout
+    assert "🎬 World Engine Ready!" in result.stdout
+    assert (tmp_path / "run.log").read_text().strip() == "run-all"
