@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
+APT_KEYRINGS_DIR="${APT_KEYRINGS_DIR:-/etc/apt/keyrings}"
+APT_SOURCES_DIR="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
+DOCKER_LOG_DIR="${DOCKER_LOG_DIR:-/var/log}"
+
 run_as_root() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
@@ -15,15 +20,15 @@ run_as_root() {
 install_docker_packages() {
   export DEBIAN_FRONTEND=noninteractive
 
-  . /etc/os-release
+  . "$OS_RELEASE_FILE"
 
   run_as_root apt-get update
   run_as_root apt-get install -y ca-certificates curl gnupg
-  run_as_root install -m 0755 -d /etc/apt/keyrings
+  run_as_root install -m 0755 -d "$APT_KEYRINGS_DIR" "$APT_SOURCES_DIR"
 
-  if [ ! -f /etc/apt/keyrings/docker.asc ]; then
-    run_as_root curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc
-    run_as_root chmod a+r /etc/apt/keyrings/docker.asc
+  if [ ! -f "$APT_KEYRINGS_DIR/docker.asc" ]; then
+    run_as_root curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o "$APT_KEYRINGS_DIR/docker.asc"
+    run_as_root chmod a+r "$APT_KEYRINGS_DIR/docker.asc"
   fi
 
   arch="$(dpkg --print-architecture)"
@@ -33,7 +38,10 @@ install_docker_packages() {
     echo "Unable to determine apt repository codename for Docker"
     exit 1
   fi
-  run_as_root sh -c "echo 'deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] ${repo_url} ${repo_suite} stable' > /etc/apt/sources.list.d/docker.list"
+  repo_line="deb [arch=${arch} signed-by=${APT_KEYRINGS_DIR}/docker.asc] ${repo_url} ${repo_suite} stable"
+  if [ ! -f "$APT_SOURCES_DIR/docker.list" ] || ! grep -Fqx "$repo_line" "$APT_SOURCES_DIR/docker.list"; then
+    run_as_root sh -c "echo '$repo_line' > '$APT_SOURCES_DIR/docker.list'"
+  fi
 
   run_as_root apt-get update
   run_as_root apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -53,8 +61,8 @@ start_docker() {
   fi
 
   if ! docker info >/dev/null 2>&1 && ! pgrep -x dockerd >/dev/null 2>&1; then
-    run_as_root mkdir -p /var/log
-    run_as_root sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'
+    run_as_root mkdir -p "$DOCKER_LOG_DIR"
+    run_as_root sh -c "nohup dockerd >'$DOCKER_LOG_DIR/dockerd.log' 2>&1 &"
   fi
 
   for _ in $(seq 1 30); do

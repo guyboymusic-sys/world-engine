@@ -1,23 +1,266 @@
 """Deployment script regression tests."""
 from pathlib import Path
+import os
+import shutil
+import subprocess
+import textwrap
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_deploy_bootstraps_docker_before_compose():
-    deploy_script = (REPO_ROOT / "deploy.sh").read_text()
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(textwrap.dedent(content))
+    path.chmod(0o755)
 
-    assert 'bash "$ROOT_DIR/scripts/install_docker.sh"' in deploy_script
-    assert deploy_script.index('bash "$ROOT_DIR/scripts/install_docker.sh"') < deploy_script.index(
-        "docker compose up -d db redis"
+
+def _symlink_command(fakebin: Path, name: str) -> None:
+    target = shutil.which(name)
+    assert target is not None, f"missing system command for test harness: {name}"
+    (fakebin / name).symlink_to(target)
+
+
+def _create_fake_python(fakebin: Path) -> None:
+    _write_executable(
+        fakebin / "python3.11",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
+          target="$3"
+          mkdir -p "$target/bin"
+          cat > "$target/bin/activate" <<'EOF'
+        export PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd):$PATH"
+        EOF
+          cat > "$target/bin/python" <<'EOF'
+        #!/bin/bash
+        exit 0
+        EOF
+          cat > "$target/bin/alembic" <<'EOF'
+        #!/bin/bash
+        exit 0
+        EOF
+          chmod +x "$target/bin/python" "$target/bin/alembic"
+        fi
+        """,
     )
-    assert "docker compose version >/dev/null 2>&1 || {" in deploy_script
 
 
-def test_install_docker_script_installs_compose_plugin_and_starts_daemon():
-    install_script = (REPO_ROOT / "scripts" / "install_docker.sh").read_text()
+def _create_fake_docker(fakebin: Path) -> None:
+    _write_executable(
+        fakebin / "docker",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        state_dir="${STATE_DIR:?}"
+        case "$*" in
+          "compose version")
+            exit 0
+            ;;
+          "info")
+            if [ -f "$state_dir/daemon-ready" ]; then
+              exit 0
+            fi
+            exit 1
+            ;;
+          "compose up -d db redis")
+            printf '%s\\n' 'compose-up' >> "$state_dir/docker.log"
+            exit 0
+            ;;
+          "compose exec -T db pg_isready -U worldengine")
+            exit 0
+            ;;
+          "compose exec -T redis redis-cli ping")
+            exit 0
+            ;;
+        esac
+        printf '%s\\n' "unexpected:$*" >> "$state_dir/docker.log"
+        exit 1
+        """,
+    )
 
-    assert "docker-compose-plugin" in install_script
-    assert "docker-ce" in install_script
-    assert "docker info >/dev/null 2>&1" in install_script
+
+def _create_fake_installer_commands(fakebin: Path) -> None:
+    _write_executable(
+        fakebin / "id",
+        """\
+        #!/bin/bash
+        if [ "${1:-}" = "-u" ]; then
+          echo 0
+        else
+          /usr/bin/id "$@"
+        fi
+        """,
+    )
+    _write_executable(
+        fakebin / "apt-get",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        state_dir="${STATE_DIR:?}"
+        printf '%s\\n' "$*" >> "$state_dir/apt-get.log"
+        if printf '%s' "$*" | grep -q 'docker-ce'; then
+          cat > "${FAKEBIN:?}/docker" <<'EOF'
+        #!/bin/bash
+        set -euo pipefail
+        state_dir="${STATE_DIR:?}"
+        case "$*" in
+          "compose version")
+            exit 0
+            ;;
+          "info")
+            if [ -f "$state_dir/daemon-ready" ]; then
+              exit 0
+            fi
+            exit 1
+            ;;
+          "compose up -d db redis")
+            printf '%s\\n' 'compose-up' >> "$state_dir/docker.log"
+            exit 0
+            ;;
+          "compose exec -T db pg_isready -U worldengine")
+            exit 0
+            ;;
+          "compose exec -T redis redis-cli ping")
+            exit 0
+            ;;
+        esac
+        printf '%s\\n' "unexpected:$*" >> "$state_dir/docker.log"
+        exit 1
+        EOF
+          chmod +x "${FAKEBIN:?}/docker"
+        fi
+        """,
+    )
+    _write_executable(
+        fakebin / "curl",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        output=''
+        while [ "$#" -gt 0 ]; do
+          if [ "$1" = "-o" ]; then
+            output="$2"
+            shift 2
+          else
+            shift
+          fi
+        done
+        printf 'fake docker gpg key\\n' > "$output"
+        """,
+    )
+    _write_executable(
+        fakebin / "dpkg",
+        """\
+        #!/bin/bash
+        if [ "${1:-}" = "--print-architecture" ]; then
+          echo amd64
+        else
+          exit 1
+        fi
+        """,
+    )
+    _write_executable(
+        fakebin / "systemctl",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        touch "${STATE_DIR:?}/daemon-ready"
+        """,
+    )
+    _write_executable(
+        fakebin / "service",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        touch "${STATE_DIR:?}/daemon-ready"
+        """,
+    )
+    _write_executable(
+        fakebin / "pgrep",
+        """\
+        #!/bin/bash
+        [ -f "${STATE_DIR:?}/daemon-ready" ]
+        """,
+    )
+    _write_executable(
+        fakebin / "sudo",
+        """\
+        #!/bin/bash
+        exec "$@"
+        """,
+    )
+
+
+def _prepare_fakebin(fakebin: Path) -> None:
+    fakebin.mkdir()
+    for command in ("bash", "dirname", "cp", "seq", "sleep", "mkdir", "chmod", "cat", "sh", "grep", "install", "touch"):
+        _symlink_command(fakebin, command)
+    _create_fake_python(fakebin)
+    _create_fake_installer_commands(fakebin)
+
+
+def _script_env(tmp_path: Path, fakebin: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = str(fakebin)
+    env["FAKEBIN"] = str(fakebin)
+    env["STATE_DIR"] = str(tmp_path)
+    env["OS_RELEASE_FILE"] = str(tmp_path / "os-release")
+    env["APT_KEYRINGS_DIR"] = str(tmp_path / "apt" / "keyrings")
+    env["APT_SOURCES_DIR"] = str(tmp_path / "apt" / "sources.list.d")
+    env["DOCKER_LOG_DIR"] = str(tmp_path / "var" / "log")
+    return env
+
+
+def test_deploy_bootstraps_docker_before_compose(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "deploy.sh", tmp_path / "deploy.sh")
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+    _write_executable(
+        tmp_path / "scripts" / "run_all.sh",
+        """\
+        #!/bin/bash
+        printf 'run-all\\n' >> "${STATE_DIR:?}/run_all.log"
+        """,
+    )
+    (tmp_path / "backend" / "requirements.txt").write_text("")
+    (tmp_path / "backend" / ".env.example").write_text("")
+    (tmp_path / "os-release").write_text("ID=ubuntu\nVERSION_CODENAME=jammy\n")
+
+    result = subprocess.run(
+        ["bash", "deploy.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Installing Docker..." in result.stdout
+    assert "Docker is ready" in result.stdout
+    assert "docker-ce" in (tmp_path / "apt-get.log").read_text()
+    assert (tmp_path / "run_all.log").read_text().strip() == "run-all"
+    assert "compose-up" in (tmp_path / "docker.log").read_text()
+
+
+def test_install_docker_only_starts_daemon_when_docker_is_already_installed(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    _create_fake_docker(fakebin)
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+
+    subprocess.run(
+        ["bash", "scripts/install_docker.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert not (tmp_path / "apt-get.log").exists()
+    assert (tmp_path / "daemon-ready").exists()
