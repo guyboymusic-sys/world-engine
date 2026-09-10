@@ -50,6 +50,14 @@ YouTube Live ──► Donation Webhook ──► FastAPI (REST API)
 
 ## Quick Start
 
+### One-command deployment
+
+```bash
+./deploy.sh
+```
+
+This runs dependency install, infrastructure startup, database migration, API startup, and all workers.
+
 ### 1. Clone and configure
 
 ```bash
