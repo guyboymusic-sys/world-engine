@@ -467,6 +467,8 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
         "DATABASE_URL=postgresql+asyncpg://db:5432/worldengine\n"
         "DATABASE_SYNC_URL=postgresql://db:5432/worldengine\n"
         "REDIS_URL=redis://redis:6379/0\n"
+        "CELERY_BROKER_URL=redis://redis:6379/1\n"
+        "CELERY_RESULT_BACKEND=redis://redis:6379/2\n"
     )
     _create_fake_venv(
         tmp_path,
@@ -477,6 +479,8 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
                 printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
                 printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
                 printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                printf '%s\\n' "$CELERY_BROKER_URL" > "${STATE_DIR:?}/celery_broker.log"
+                printf '%s\\n' "$CELERY_RESULT_BACKEND" > "${STATE_DIR:?}/celery_result.log"
                 printf '%s\\n' "$PYTHONPATH" > "${STATE_DIR:?}/pythonpath.log"
                 printf '%s\\n' "$*" >> "${STATE_DIR:?}/alembic.log"
                 """,
@@ -506,6 +510,8 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
     assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
     assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
     assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
+    assert (tmp_path / "celery_broker.log").read_text().strip() == "redis://localhost:6379/1"
+    assert (tmp_path / "celery_result.log").read_text().strip() == "redis://localhost:6379/2"
     assert (tmp_path / "pythonpath.log").read_text().strip() == str(tmp_path)
     assert (tmp_path / "alembic.log").read_text().strip() == "upgrade head"
 
@@ -663,6 +669,68 @@ def test_configure_script_loads_env_without_executing_shell_code(tmp_path):
     )
 
     assert not marker_path.exists()
+
+
+def test_configure_script_preserves_ipv6_host_urls(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_URL=postgresql+asyncpg://[::1]:5432/worldengine\n"
+        "DATABASE_SYNC_URL=postgresql://[::1]:5432/worldengine\n"
+        "REDIS_URL=redis://[::1]:6379/0\n"
+        "CELERY_BROKER_URL=redis://[::1]:6379/1\n"
+        "CELERY_RESULT_BACKEND=redis://[::1]:6379/2\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                printf '%s\\n' "$CELERY_BROKER_URL" > "${STATE_DIR:?}/celery_broker.log"
+                printf '%s\\n' "$CELERY_RESULT_BACKEND" > "${STATE_DIR:?}/celery_result.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://[::1]:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://[::1]:5432/worldengine"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://[::1]:6379/0"
+    assert (tmp_path / "celery_broker.log").read_text().strip() == "redis://[::1]:6379/1"
+    assert (tmp_path / "celery_result.log").read_text().strip() == "redis://[::1]:6379/2"
 
 
 def test_run_script_delegates_to_runtime_launcher(tmp_path):

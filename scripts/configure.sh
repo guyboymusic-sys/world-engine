@@ -50,23 +50,26 @@ if not parts.scheme or not parts.netloc:
     print(value)
     raise SystemExit
 
-netloc = parts.netloc
-if "@" in netloc:
-    userinfo, hostpart = netloc.rsplit("@", 1)
-    prefix = f"{userinfo}@"
-else:
-    prefix = ""
-    hostpart = netloc
+if parts.hostname != from_host:
+    print(value)
+    raise SystemExit
 
-if ":" in hostpart:
-    host, remainder = hostpart.split(":", 1)
-    if host == from_host:
-        hostpart = f"{to_host}:{remainder}"
-else:
-    if hostpart == from_host:
-        hostpart = to_host
+userinfo = ""
+if parts.username is not None:
+    userinfo = parts.username
+    if parts.password is not None:
+        userinfo = f"{userinfo}:{parts.password}"
+    userinfo = f"{userinfo}@"
 
-print(urlunsplit((parts.scheme, f"{prefix}{hostpart}", parts.path, parts.query, parts.fragment)))
+host = to_host
+if ":" in host and not host.startswith("["):
+    host = f"[{host}]"
+
+netloc = f"{userinfo}{host}"
+if parts.port is not None:
+    netloc = f"{netloc}:{parts.port}"
+
+print(urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)))
 PY
 }
 
@@ -96,6 +99,12 @@ if [ -n "${DATABASE_SYNC_URL:-}" ]; then
 fi
 if [ -n "${REDIS_URL:-}" ]; then
   REDIS_URL="$(rewrite_service_host "$REDIS_URL" "redis" "localhost")"
+fi
+if [ -n "${CELERY_BROKER_URL:-}" ]; then
+  CELERY_BROKER_URL="$(rewrite_service_host "$CELERY_BROKER_URL" "redis" "localhost")"
+fi
+if [ -n "${CELERY_RESULT_BACKEND:-}" ]; then
+  CELERY_RESULT_BACKEND="$(rewrite_service_host "$CELERY_RESULT_BACKEND" "redis" "localhost")"
 fi
 
 export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
