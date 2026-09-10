@@ -12,6 +12,8 @@ class Settings(BaseSettings):
 
     # Redis / Celery
     redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str | None = None
+    celery_result_backend: str | None = None
 
     # Auth
     secret_key: str = "change-me"
