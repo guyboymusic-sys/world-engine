@@ -32,6 +32,9 @@ DEPLOY_REDIS_URL=redis://localhost:6379/0 \
 ./deploy.sh
 ```
 
+You can also override Celery endpoints during deploy with:
+`DEPLOY_CELERY_BROKER_URL` and `DEPLOY_CELERY_RESULT_BACKEND`.
+
 ### 2) Docker services
 
 ```bash

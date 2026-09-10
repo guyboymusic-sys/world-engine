@@ -58,4 +58,25 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-wait "$api_pid" "$workers_pid"
+status=0
+remaining=("$api_pid" "$workers_pid")
+while [ "${#remaining[@]}" -gt 0 ]; do
+  if wait -n "${remaining[@]}"; then
+    rc=0
+  else
+    rc=$?
+    if [ "$status" -eq 0 ]; then
+      status=$rc
+    fi
+  fi
+
+  next=()
+  for pid in "${remaining[@]}"; do
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      next+=("$pid")
+    fi
+  done
+  remaining=("${next[@]}")
+done
+
+exit "$status"
