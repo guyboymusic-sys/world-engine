@@ -4,8 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+if command -v python3.11 >/dev/null 2>&1; then
+  PYTHON_BIN="python3.11"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+else
+  echo "Python 3.11 is required"
+  exit 1
+fi
+
 if [ ! -d ".venv" ]; then
-  python3.11 -m venv .venv
+  "$PYTHON_BIN" -m venv .venv
 fi
 
 # shellcheck disable=SC1091
@@ -26,8 +35,8 @@ export DATABASE_URL="${DEPLOY_DATABASE_URL:-${DATABASE_URL:-postgresql+asyncpg:/
 export DATABASE_SYNC_URL="${DEPLOY_DATABASE_SYNC_URL:-${DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}}"
 export REDIS_URL="${DEPLOY_REDIS_URL:-${REDIS_URL:-redis://localhost:6379/0}}"
 if [ -n "${DEPLOY_REDIS_URL:-}" ]; then
-  export CELERY_BROKER_URL="${DEPLOY_CELERY_BROKER_URL:-$REDIS_URL}"
-  export CELERY_RESULT_BACKEND="${DEPLOY_CELERY_RESULT_BACKEND:-$REDIS_URL}"
+  export CELERY_BROKER_URL="${DEPLOY_CELERY_BROKER_URL:-${CELERY_BROKER_URL:-$REDIS_URL}}"
+  export CELERY_RESULT_BACKEND="${DEPLOY_CELERY_RESULT_BACKEND:-${CELERY_RESULT_BACKEND:-$REDIS_URL}}"
 else
   export CELERY_BROKER_URL="${CELERY_BROKER_URL:-$REDIS_URL}"
   export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
