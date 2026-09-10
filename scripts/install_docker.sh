@@ -40,7 +40,7 @@ install_docker_packages() {
   fi
   repo_line="deb [arch=${arch} signed-by=${APT_KEYRINGS_DIR}/docker.asc] ${repo_url} ${repo_suite} stable"
   if [ ! -f "$APT_SOURCES_DIR/docker.list" ] || ! grep -Fqx "$repo_line" "$APT_SOURCES_DIR/docker.list"; then
-    run_as_root sh -c "echo '$repo_line' > '$APT_SOURCES_DIR/docker.list'"
+    run_as_root sh -c "printf '%s\n' '$repo_line' >> '$APT_SOURCES_DIR/docker.list'"
   fi
 
   run_as_root apt-get update
@@ -76,12 +76,11 @@ start_docker() {
   exit 1
 }
 
-if ! command -v apt-get >/dev/null 2>&1; then
-  echo "This installer currently supports apt-based systems only"
-  exit 1
-fi
-
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Automatic Docker installation currently supports apt-based systems only"
+    exit 1
+  fi
   install_docker_packages
 fi
 

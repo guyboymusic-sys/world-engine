@@ -264,3 +264,22 @@ def test_install_docker_only_starts_daemon_when_docker_is_already_installed(tmp_
 
     assert not (tmp_path / "apt-get.log").exists()
     assert (tmp_path / "daemon-ready").exists()
+
+
+def test_install_docker_reports_unsupported_platform_when_apt_is_missing(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    (fakebin / "apt-get").unlink()
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+
+    result = subprocess.run(
+        ["bash", "scripts/install_docker.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Automatic Docker installation currently supports apt-based systems only" in result.stdout
