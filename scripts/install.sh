@@ -35,6 +35,13 @@ install_system_packages() {
     redis-tools
 }
 
+python_is_supported() {
+  "$1" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+}
+
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "Installing Docker..."
@@ -67,7 +74,7 @@ install_system_packages
 
 if command -v python3.11 >/dev/null 2>&1; then
   PYTHON_BIN="python3.11"
-elif command -v python3 >/dev/null 2>&1; then
+elif command -v python3 >/dev/null 2>&1 && python_is_supported python3; then
   PYTHON_BIN="python3"
 else
   echo "Python 3.11 is required"

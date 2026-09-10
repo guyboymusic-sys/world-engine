@@ -733,6 +733,62 @@ def test_configure_script_preserves_ipv6_host_urls(tmp_path):
     assert (tmp_path / "celery_result.log").read_text().strip() == "redis://[::1]:6379/2"
 
 
+def test_configure_script_parses_quoted_env_values_with_whitespace(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "pg_isready",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    _write_executable(
+        fakebin / "redis-cli",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        'DATABASE_URL = "postgresql+asyncpg://db:5432/worldengine"\n'
+        "DATABASE_SYNC_URL = 'postgresql://db:5432/worldengine'\n"
+        'REDIS_URL = "redis://redis:6379/0"\n'
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
+
+
 def test_run_script_delegates_to_runtime_launcher(tmp_path):
     (tmp_path / "scripts").mkdir()
     shutil.copy(REPO_ROOT / "scripts" / "run.sh", tmp_path / "scripts" / "run.sh")

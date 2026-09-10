@@ -20,6 +20,8 @@ load_env_file() {
     line="${line#export }"
     key="${line%%=*}"
     value="${line#*=}"
+    key="$(trim_whitespace "$key")"
+    value="$(trim_whitespace "$value")"
 
     case "$key" in
       [A-Za-z_][A-Za-z0-9_]*)
@@ -37,6 +39,13 @@ load_env_file() {
     printf -v "$key" '%s' "$value"
     export "$key"
   done < "$env_file"
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
 }
 
 rewrite_service_host() {
