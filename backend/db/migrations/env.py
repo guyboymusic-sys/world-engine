@@ -6,6 +6,7 @@ from alembic import context
 from backend.db.database import Base
 from backend.models import models  # noqa: F401 – registers all ORM models
 from backend.core.config import get_settings
+from backend.db.migrations.url_utils import resolve_alembic_url
 
 settings = get_settings()
 
@@ -13,9 +14,7 @@ config = context.config
 
 
 def _resolve_alembic_url() -> str:
-    if settings.database_sync_url:
-        return settings.database_sync_url
-    return settings.database_url.replace("+asyncpg", "")
+    return resolve_alembic_url(settings.database_url, settings.database_sync_url)
 
 
 config.set_main_option("sqlalchemy.url", _resolve_alembic_url())
