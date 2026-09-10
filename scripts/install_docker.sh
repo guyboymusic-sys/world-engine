@@ -39,9 +39,17 @@ install_docker_packages() {
     exit 1
   fi
   repo_line="deb [arch=${arch} signed-by=${APT_KEYRINGS_DIR}/docker.asc] ${repo_url} ${repo_suite} stable"
-  if [ ! -f "$APT_SOURCES_DIR/docker.list" ] || ! grep -Fqx "$repo_line" "$APT_SOURCES_DIR/docker.list"; then
-    run_as_root sh -c "printf '%s\n' '$repo_line' >> '$APT_SOURCES_DIR/docker.list'"
-  fi
+  run_as_root sh -c "
+docker_list_file='$APT_SOURCES_DIR/docker.list'
+tmp_file=\"\${docker_list_file}.tmp\"
+if [ -f \"\$docker_list_file\" ]; then
+  grep -Fv 'https://download.docker.com/linux/' \"\$docker_list_file\" > \"\$tmp_file\" || true
+else
+  : > \"\$tmp_file\"
+fi
+printf '%s\n' '$repo_line' >> \"\$tmp_file\"
+mv \"\$tmp_file\" \"\$docker_list_file\"
+"
 
   run_as_root apt-get update
   run_as_root apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin

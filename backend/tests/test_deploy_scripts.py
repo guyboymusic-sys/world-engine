@@ -194,7 +194,7 @@ def _create_fake_installer_commands(fakebin: Path) -> None:
 
 def _prepare_fakebin(fakebin: Path) -> None:
     fakebin.mkdir()
-    for command in ("bash", "dirname", "cp", "seq", "sleep", "mkdir", "chmod", "cat", "sh", "grep", "install", "touch"):
+    for command in ("bash", "dirname", "cp", "seq", "sleep", "mkdir", "chmod", "cat", "sh", "grep", "install", "touch", "mv"):
         _symlink_command(fakebin, command)
     _create_fake_python(fakebin)
     _create_fake_installer_commands(fakebin)
@@ -283,3 +283,38 @@ def test_install_docker_reports_unsupported_platform_when_apt_is_missing(tmp_pat
 
     assert result.returncode == 1
     assert "Automatic Docker installation currently supports apt-based systems only" in result.stdout
+
+
+def test_install_docker_rewrites_only_the_docker_repo_entry(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install_docker.sh", tmp_path / "scripts" / "install_docker.sh")
+    (tmp_path / "os-release").write_text("ID=ubuntu\nVERSION_CODENAME=jammy\n")
+    docker_list = tmp_path / "apt" / "sources.list.d" / "docker.list"
+    docker_list.parent.mkdir(parents=True)
+    docker_list.write_text(
+        "# keep this comment\n"
+        "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable\n"
+        "deb http://mirror.example stable main\n"
+    )
+
+    subprocess.run(
+        ["bash", "scripts/install_docker.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    docker_sources = docker_list.read_text().splitlines()
+    assert "# keep this comment" in docker_sources
+    assert "deb http://mirror.example stable main" in docker_sources
+    assert "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable" not in docker_sources
+    assert (
+        "deb [arch=amd64 signed-by="
+        f"{tmp_path / 'apt' / 'keyrings' / 'docker.asc'}"
+        "] https://download.docker.com/linux/ubuntu jammy stable"
+    ) in docker_sources
+    assert sum("https://download.docker.com/linux/" in line for line in docker_sources) == 1
