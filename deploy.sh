@@ -56,7 +56,7 @@ fi
 
 redis_ready=0
 for _ in $(seq 1 30); do
-  if redis-cli -u "$REDIS_URL" ping >/dev/null 2>&1; then
+  if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
     redis_ready=1
     break
   fi
