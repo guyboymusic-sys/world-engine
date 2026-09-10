@@ -32,6 +32,7 @@ def test_celery_app_falls_back_to_redis_url(monkeypatch):
     get_settings.cache_clear()
 
     from backend.core import celery_app as celery_module
+    get_settings.cache_clear()
     importlib.reload(celery_module)
 
     assert celery_module.celery_app.conf.broker_url == "redis://localhost:6379/9"
@@ -45,6 +46,7 @@ def test_celery_app_uses_mixed_override_and_fallback(monkeypatch):
     get_settings.cache_clear()
 
     from backend.core import celery_app as celery_module
+    get_settings.cache_clear()
     importlib.reload(celery_module)
 
     assert celery_module.celery_app.conf.broker_url == "redis://localhost:6379/7"

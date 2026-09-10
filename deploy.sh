@@ -22,19 +22,9 @@ set -a
 source backend/.env
 set +a
 
-if [ "${DATABASE_URL:-}" = "******db:5432/worldengine" ]; then
-  DATABASE_URL="******localhost:5432/worldengine"
-fi
-if [ "${DATABASE_SYNC_URL:-}" = "******db:5432/worldengine" ]; then
-  DATABASE_SYNC_URL="******localhost:5432/worldengine"
-fi
-if [ "${REDIS_URL:-}" = "redis://redis:6379/0" ]; then
-  REDIS_URL="redis://localhost:6379/0"
-fi
-
-export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
-export DATABASE_SYNC_URL="${DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}"
-export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+export DATABASE_URL="${DEPLOY_DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
+export DATABASE_SYNC_URL="${DEPLOY_DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}"
+export REDIS_URL="${DEPLOY_REDIS_URL:-redis://localhost:6379/0}"
 export CELERY_BROKER_URL="${CELERY_BROKER_URL:-$REDIS_URL}"
 export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
 export PYTHONPATH="$ROOT_DIR:${PYTHONPATH:-}"

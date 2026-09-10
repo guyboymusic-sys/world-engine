@@ -23,6 +23,15 @@ This repository now supports one-command startup for local CPU/GPU hosts.
 ./deploy.sh
 ```
 
+Optional local endpoint overrides:
+
+```bash
+DEPLOY_DATABASE_URL=******localhost:5432/worldengine \
+DEPLOY_DATABASE_SYNC_URL=******localhost:5432/worldengine \
+DEPLOY_REDIS_URL=redis://localhost:6379/0 \
+./deploy.sh
+```
+
 ### 2) Docker services
 
 ```bash
