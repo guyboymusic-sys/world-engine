@@ -54,11 +54,6 @@ elif ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-docker compose version >/dev/null 2>&1 || {
-  echo "Docker Compose is not available"
-  exit 1
-}
-
 docker compose up -d db redis
 
 db_ready=0
