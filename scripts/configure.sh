@@ -106,6 +106,7 @@ fi
 if [ -n "${CELERY_RESULT_BACKEND:-}" ]; then
   CELERY_RESULT_BACKEND="$(rewrite_service_host "$CELERY_RESULT_BACKEND" "redis" "localhost")"
 fi
+export DATABASE_URL DATABASE_SYNC_URL REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND
 
 export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
 export DATABASE_SYNC_URL="${DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}"
