@@ -213,7 +213,7 @@ def _create_fake_installer_commands(fakebin: Path) -> None:
 
 def _prepare_fakebin(fakebin: Path) -> None:
     fakebin.mkdir()
-    for command in ("bash", "dirname", "cp", "seq", "sleep", "mkdir", "chmod", "cat", "sh", "grep", "install", "touch", "mv"):
+    for command in ("bash", "dirname", "cp", "seq", "sleep", "mkdir", "chmod", "cat", "sh", "grep", "install", "touch", "mktemp", "rm"):
         _symlink_command(fakebin, command)
     _create_fake_python(fakebin)
     _create_fake_installer_commands(fakebin)

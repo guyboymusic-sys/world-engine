@@ -17,6 +17,21 @@ run_as_root() {
   fi
 }
 
+update_docker_repo_file() {
+  local repo_line="$1"
+  local docker_list_file="$APT_SOURCES_DIR/docker.list"
+  local tmp_file
+
+  tmp_file="$(mktemp)"
+
+  if [ -f "$docker_list_file" ]; then
+    grep -Fv 'https://download.docker.com/linux/' "$docker_list_file" > "$tmp_file" || true
+  fi
+  printf '%s\n' "$repo_line" >> "$tmp_file"
+  run_as_root install -m 0644 "$tmp_file" "$docker_list_file"
+  rm -f "$tmp_file"
+}
+
 install_docker_packages() {
   export DEBIAN_FRONTEND=noninteractive
 
@@ -39,17 +54,7 @@ install_docker_packages() {
     exit 1
   fi
   repo_line="deb [arch=${arch} signed-by=${APT_KEYRINGS_DIR}/docker.asc] ${repo_url} ${repo_suite} stable"
-  run_as_root sh -c "
-docker_list_file='$APT_SOURCES_DIR/docker.list'
-tmp_file=\"\${docker_list_file}.tmp\"
-if [ -f \"\$docker_list_file\" ]; then
-  grep -Fv 'https://download.docker.com/linux/' \"\$docker_list_file\" > \"\$tmp_file\" || true
-else
-  : > \"\$tmp_file\"
-fi
-printf '%s\n' '$repo_line' >> \"\$tmp_file\"
-mv \"\$tmp_file\" \"\$docker_list_file\"
-"
+  update_docker_repo_file "$repo_line"
 
   run_as_root apt-get update
   run_as_root apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
