@@ -5,10 +5,13 @@ from backend.core.config import get_settings
 
 settings = get_settings()
 
+broker_url = settings.celery_broker_url or settings.redis_url
+result_backend = settings.celery_result_backend or settings.redis_url
+
 celery_app = Celery(
     "world_engine",
-    broker=settings.redis_url,
-    backend=settings.redis_url,
+    broker=broker_url,
+    backend=result_backend,
     include=[
         "backend.workers.video_worker",
         "backend.workers.audio_worker",
