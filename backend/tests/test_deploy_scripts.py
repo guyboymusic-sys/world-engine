@@ -461,8 +461,8 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
     (tmp_path / "backend").mkdir()
     shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
     (tmp_path / "backend" / ".env.example").write_text(
-        "DATABASE_URL=******db:5432/worldengine\n"
-        "DATABASE_SYNC_URL=******db:5432/worldengine\n"
+        "DATABASE_URL=postgresql+asyncpg://db:5432/worldengine\n"
+        "DATABASE_SYNC_URL=postgresql://db:5432/worldengine\n"
         "REDIS_URL=redis://redis:6379/0\n"
     )
     _create_fake_venv(
@@ -498,11 +498,112 @@ def test_configure_script_copies_env_rewrites_local_urls_and_runs_migrations(tmp
     assert "✅ Redis ready" in result.stdout
     assert "✅ Configuration complete!" in result.stdout
     assert (tmp_path / "backend" / ".env").exists()
-    assert (tmp_path / "database_url.log").read_text().strip() == "******localhost:5432/worldengine"
-    assert (tmp_path / "database_sync_url.log").read_text().strip() == "******localhost:5432/worldengine"
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://localhost:5432/worldengine"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://localhost:5432/worldengine"
     assert (tmp_path / "redis_url.log").read_text().strip() == "redis://localhost:6379/0"
     assert (tmp_path / "pythonpath.log").read_text().strip() == str(tmp_path)
     assert (tmp_path / "alembic.log").read_text().strip() == "upgrade head"
+
+
+def test_install_script_reports_docker_permission_errors_without_reinstalling(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    _write_executable(
+        fakebin / "docker",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        case "$*" in
+          "compose version")
+            exit 0
+            ;;
+          "info")
+            echo "Got permission denied while trying to connect to the Docker daemon socket" >&2
+            exit 1
+            ;;
+        esac
+        exit 1
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "install.sh", tmp_path / "scripts" / "install.sh")
+    _write_executable(
+        tmp_path / "scripts" / "install_docker.sh",
+        """\
+        #!/bin/bash
+        printf 'installer-called\\n' >> "${STATE_DIR:?}/install.log"
+        exit 0
+        """,
+    )
+    (tmp_path / "backend" / "requirements.txt").write_text("")
+
+    result = subprocess.run(
+        ["bash", "scripts/install.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "cannot access the Docker daemon" in result.stdout
+    assert not (tmp_path / "install.log").exists()
+
+
+def test_configure_script_rewrites_service_hostnames_with_auth_and_query_params(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    _write_executable(
+        fakebin / "docker",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        case "$*" in
+          "compose exec -T db pg_isready -U worldengine"|"compose exec -T redis redis-cli ping")
+            exit 0
+            ;;
+        esac
+        exit 1
+        """,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
+    (tmp_path / "backend" / ".env.example").write_text(
+        "DATABASE_URL=postgresql+asyncpg://user@db:5432/worldengine?sslmode=disable\n"
+        "DATABASE_SYNC_URL=postgresql://user@db:5432/worldengine?connect_timeout=10\n"
+        "REDIS_URL=redis://user@redis:6379/2?health_check_interval=30\n"
+    )
+    _create_fake_venv(
+        tmp_path,
+        {
+            "alembic": """\
+                #!/bin/bash
+                set -euo pipefail
+                printf '%s\\n' "$DATABASE_URL" > "${STATE_DIR:?}/database_url.log"
+                printf '%s\\n' "$DATABASE_SYNC_URL" > "${STATE_DIR:?}/database_sync_url.log"
+                printf '%s\\n' "$REDIS_URL" > "${STATE_DIR:?}/redis_url.log"
+                """,
+        },
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["STATE_DIR"] = str(tmp_path)
+
+    subprocess.run(
+        ["bash", "scripts/configure.sh"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (tmp_path / "database_url.log").read_text().strip() == "postgresql+asyncpg://user@localhost:5432/worldengine?sslmode=disable"
+    assert (tmp_path / "database_sync_url.log").read_text().strip() == "postgresql://user@localhost:5432/worldengine?connect_timeout=10"
+    assert (tmp_path / "redis_url.log").read_text().strip() == "redis://user@localhost:6379/2?health_check_interval=30"
 
 
 def test_run_script_delegates_to_runtime_launcher(tmp_path):

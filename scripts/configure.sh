@@ -6,6 +6,14 @@ cd "$ROOT_DIR"
 
 echo "⚙️  World Engine - Configuration Phase"
 
+rewrite_service_host() {
+  local value="$1"
+  local from_host="$2"
+  local to_host="$3"
+
+  printf '%s\n' "$value" | sed -E "s#(//|@)${from_host}([:/])#\1${to_host}\2#"
+}
+
 if [ ! -f ".venv/bin/activate" ]; then
   echo "Virtual environment is missing. Run bash scripts/install.sh first."
   exit 1
@@ -27,14 +35,14 @@ fi
 
 export PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-if [ "${DATABASE_URL:-}" = "******db:5432/worldengine" ]; then
-  DATABASE_URL="******localhost:5432/worldengine"
+if [ -n "${DATABASE_URL:-}" ]; then
+  DATABASE_URL="$(rewrite_service_host "$DATABASE_URL" "db" "localhost")"
 fi
-if [ "${DATABASE_SYNC_URL:-}" = "******db:5432/worldengine" ]; then
-  DATABASE_SYNC_URL="******localhost:5432/worldengine"
+if [ -n "${DATABASE_SYNC_URL:-}" ]; then
+  DATABASE_SYNC_URL="$(rewrite_service_host "$DATABASE_SYNC_URL" "db" "localhost")"
 fi
-if [ "${REDIS_URL:-}" = "redis://redis:6379/0" ]; then
-  REDIS_URL="redis://localhost:6379/0"
+if [ -n "${REDIS_URL:-}" ]; then
+  REDIS_URL="$(rewrite_service_host "$REDIS_URL" "redis" "localhost")"
 fi
 
 export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
