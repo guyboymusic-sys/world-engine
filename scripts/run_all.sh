@@ -36,10 +36,13 @@ export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
 
 uvicorn backend.main:app --host 0.0.0.0 --port "${FASTAPI_PORT:-8000}" &
 api_pid=$!
+bash "$ROOT_DIR/scripts/run_workers.sh" &
+workers_pid=$!
 
 cleanup() {
   kill "$api_pid" >/dev/null 2>&1 || true
+  kill "$workers_pid" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
-bash "$ROOT_DIR/scripts/run_workers.sh"
+wait "$api_pid" "$workers_pid"
