@@ -22,9 +22,9 @@ set -a
 source backend/.env
 set +a
 
-export DATABASE_URL="${DEPLOY_DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}"
-export DATABASE_SYNC_URL="${DEPLOY_DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}"
-export REDIS_URL="${DEPLOY_REDIS_URL:-redis://localhost:6379/0}"
+export DATABASE_URL="${DEPLOY_DATABASE_URL:-${DATABASE_URL:-postgresql+asyncpg://worldengine:worldengine@localhost:5432/worldengine}}"
+export DATABASE_SYNC_URL="${DEPLOY_DATABASE_SYNC_URL:-${DATABASE_SYNC_URL:-postgresql://worldengine:worldengine@localhost:5432/worldengine}}"
+export REDIS_URL="${DEPLOY_REDIS_URL:-${REDIS_URL:-redis://localhost:6379/0}}"
 export CELERY_BROKER_URL="${CELERY_BROKER_URL:-$REDIS_URL}"
 export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
 export PYTHONPATH="$ROOT_DIR:${PYTHONPATH:-}"

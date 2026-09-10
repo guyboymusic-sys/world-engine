@@ -36,11 +36,24 @@ export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-$REDIS_URL}"
 
 uvicorn backend.main:app --host 0.0.0.0 --port "${FASTAPI_PORT:-8000}" &
 api_pid=$!
-bash "$ROOT_DIR/scripts/run_workers.sh" &
+workers_pgid_file="$(mktemp /tmp/world-engine-workers-pgid.XXXXXX)"
+setsid bash -c 'echo $$ > "$1"; exec bash "$2"' bash "$workers_pgid_file" "$ROOT_DIR/scripts/run_workers.sh" &
 workers_pid=$!
+
+for _ in $(seq 1 50); do
+  if [ -s "$workers_pgid_file" ]; then
+    break
+  fi
+  sleep 0.1
+done
+workers_pgid="$(cat "$workers_pgid_file" 2>/dev/null || true)"
+rm -f "$workers_pgid_file"
 
 cleanup() {
   kill "$api_pid" >/dev/null 2>&1 || true
+  if [ -n "${workers_pgid:-}" ]; then
+    kill -- "-$workers_pgid" >/dev/null 2>&1 || true
+  fi
   kill "$workers_pid" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
