@@ -18,16 +18,28 @@ run_as_root() {
 }
 
 install_system_packages() {
+  local python_packages=(
+    python3
+    python3-venv
+    python3-dev
+  )
+
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "Automatic package installation currently supports Debian/Ubuntu apt-based systems only"
     exit 1
   fi
 
+  if command -v python3.11 >/dev/null 2>&1; then
+    python_packages=(
+      python3.11
+      python3.11-venv
+      python3.11-dev
+    )
+  fi
+
   run_as_root apt-get update -qq
   run_as_root apt-get install -y -qq \
-    python3.11 \
-    python3.11-venv \
-    python3.11-dev \
+    "${python_packages[@]}" \
     git \
     curl \
     wget \
