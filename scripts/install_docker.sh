@@ -84,7 +84,7 @@ start_docker() {
   exit 1
 }
 
-if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1; then
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "Automatic Docker installation currently supports apt-based systems only"
     exit 1
@@ -95,7 +95,7 @@ fi
 start_docker
 
 docker compose version >/dev/null 2>&1 || {
-  echo "Docker Compose plugin is not available"
+  echo "Docker Compose plugin is required but not installed"
   exit 1
 }
 

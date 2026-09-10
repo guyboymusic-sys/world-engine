@@ -43,8 +43,14 @@ else
 fi
 export PYTHONPATH="$ROOT_DIR:${PYTHONPATH:-}"
 
-if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1; then
   echo "Installing Docker..."
+  bash "$ROOT_DIR/scripts/install_docker.sh"
+elif ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose is not available"
+  exit 1
+elif ! docker info >/dev/null 2>&1; then
+  echo "Starting Docker..."
   bash "$ROOT_DIR/scripts/install_docker.sh"
 fi
 

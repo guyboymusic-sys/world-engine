@@ -80,6 +80,25 @@ def _create_fake_docker(fakebin: Path) -> None:
     )
 
 
+def _create_fake_docker_without_compose(fakebin: Path) -> None:
+    _write_executable(
+        fakebin / "docker",
+        """\
+        #!/bin/bash
+        set -euo pipefail
+        case "$*" in
+          "compose version")
+            exit 1
+            ;;
+          "info")
+            exit 1
+            ;;
+        esac
+        exit 1
+        """,
+    )
+
+
 def _create_fake_installer_commands(fakebin: Path) -> None:
     _write_executable(
         fakebin / "id",
@@ -318,3 +337,41 @@ def test_install_docker_rewrites_only_the_docker_repo_entry(tmp_path):
         "] https://download.docker.com/linux/ubuntu jammy stable"
     ) in docker_sources
     assert sum("https://download.docker.com/linux/" in line for line in docker_sources) == 1
+
+
+def test_deploy_fails_fast_when_compose_is_missing_even_if_docker_exists(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    _prepare_fakebin(fakebin)
+    _create_fake_docker_without_compose(fakebin)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "backend").mkdir()
+    shutil.copy(REPO_ROOT / "deploy.sh", tmp_path / "deploy.sh")
+    _write_executable(
+        tmp_path / "scripts" / "install_docker.sh",
+        """\
+        #!/bin/bash
+        printf 'installer-called\\n' >> "${STATE_DIR:?}/install.log"
+        exit 0
+        """,
+    )
+    _write_executable(
+        tmp_path / "scripts" / "run_all.sh",
+        """\
+        #!/bin/bash
+        exit 0
+        """,
+    )
+    (tmp_path / "backend" / "requirements.txt").write_text("")
+    (tmp_path / "backend" / ".env.example").write_text("")
+
+    result = subprocess.run(
+        ["bash", "deploy.sh"],
+        cwd=tmp_path,
+        env=_script_env(tmp_path, fakebin),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Docker Compose is not available" in result.stdout
+    assert not (tmp_path / "install.log").exists()
