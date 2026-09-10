@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
+APT_KEYRINGS_DIR="${APT_KEYRINGS_DIR:-/etc/apt/keyrings}"
+APT_SOURCES_DIR="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
+DOCKER_LOG_DIR="${DOCKER_LOG_DIR:-/var/log}"
+
+run_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "Docker installation requires root or sudo"
+    exit 1
+  fi
+}
+
+resolve_docker_repo_distribution() {
+  case "${ID:-}" in
+    ubuntu|debian)
+      printf '%s\n' "$ID"
+      return 0
+      ;;
+  esac
+
+  case " ${ID_LIKE:-} " in
+    *" ubuntu "*)
+      printf '%s\n' "ubuntu"
+      return 0
+      ;;
+    *" debian "*)
+      printf '%s\n' "debian"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+update_docker_repo_file() {
+  local repo_line="$1"
+  local docker_list_file="$APT_SOURCES_DIR/docker.list"
+
+  (
+    tmp_file="$(mktemp)"
+    trap 'rm -f "$tmp_file"' EXIT
+
+    if [ -f "$docker_list_file" ]; then
+      grep -Fv 'https://download.docker.com/linux/' "$docker_list_file" > "$tmp_file" || true
+    fi
+    printf '%s\n' "$repo_line" >> "$tmp_file"
+    run_as_root install -m 0644 "$tmp_file" "$docker_list_file"
+  )
+}
+
+install_docker_packages() {
+  export DEBIAN_FRONTEND=noninteractive
+  local repo_distribution
+
+  . "$OS_RELEASE_FILE"
+
+  if ! repo_distribution="$(resolve_docker_repo_distribution)"; then
+    echo "Automatic Docker installation currently supports Debian/Ubuntu apt-based systems only"
+    exit 1
+  fi
+
+  run_as_root apt-get update
+  run_as_root apt-get install -y ca-certificates curl gnupg
+  run_as_root install -m 0755 -d "$APT_KEYRINGS_DIR" "$APT_SOURCES_DIR"
+
+  if [ ! -f "$APT_KEYRINGS_DIR/docker.asc" ]; then
+    run_as_root curl -fsSL "https://download.docker.com/linux/${repo_distribution}/gpg" -o "$APT_KEYRINGS_DIR/docker.asc"
+    run_as_root chmod a+r "$APT_KEYRINGS_DIR/docker.asc"
+  fi
+
+  arch="$(dpkg --print-architecture)"
+  repo_url="https://download.docker.com/linux/${repo_distribution}"
+  repo_suite="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+  if [ -z "${repo_suite}" ]; then
+    echo "Unable to determine apt repository codename for Docker"
+    exit 1
+  fi
+  repo_line="deb [arch=${arch} signed-by=${APT_KEYRINGS_DIR}/docker.asc] ${repo_url} ${repo_suite} stable"
+  update_docker_repo_file "$repo_line"
+
+  run_as_root apt-get update
+  run_as_root apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+start_docker() {
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    run_as_root systemctl enable --now docker >/dev/null 2>&1 || true
+  fi
+
+  if ! docker info >/dev/null 2>&1 && command -v service >/dev/null 2>&1; then
+    run_as_root service docker start >/dev/null 2>&1 || true
+  fi
+
+  if ! docker info >/dev/null 2>&1 && ! pgrep -x dockerd >/dev/null 2>&1; then
+    run_as_root mkdir -p "$DOCKER_LOG_DIR"
+    run_as_root sh -c "nohup dockerd >'$DOCKER_LOG_DIR/dockerd.log' 2>&1 &"
+  fi
+
+  for _ in $(seq 1 30); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Docker daemon failed to start"
+  exit 1
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Automatic Docker installation currently supports Debian/Ubuntu apt-based systems only"
+    exit 1
+  fi
+  install_docker_packages
+fi
+
+start_docker
+
+docker compose version >/dev/null 2>&1 || {
+  echo "Docker Compose plugin is required but not installed"
+  exit 1
+}
+
+echo "Docker is ready"
