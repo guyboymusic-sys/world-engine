@@ -72,7 +72,7 @@ require_docker() {
 
 install_system_packages
 
-if command -v python3.11 >/dev/null 2>&1; then
+if command -v python3.11 >/dev/null 2>&1 && python_is_supported python3.11; then
   PYTHON_BIN="python3.11"
 elif command -v python3 >/dev/null 2>&1 && python_is_supported python3; then
   PYTHON_BIN="python3"

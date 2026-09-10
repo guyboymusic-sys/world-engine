@@ -8,15 +8,17 @@ echo "⚙️  World Engine - Configuration Phase"
 
 load_env_file() {
   local env_file="$1"
-  local line key value
+  local line trimmed_line key value
 
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
+    trimmed_line="$(trim_leading_whitespace "$line")"
+    case "$trimmed_line" in
       ''|'#'*)
         continue
         ;;
     esac
 
+    line="$trimmed_line"
     line="${line#export }"
     key="${line%%=*}"
     value="${line#*=}"
@@ -32,19 +34,31 @@ load_env_file() {
     esac
 
     value="${value%$'\r'}"
-    if [[ "$value" =~ ^\".*\"$ || "$value" =~ ^\'.*\'$ ]]; then
-      value="${value:1:${#value}-2}"
-    fi
 
     printf -v "$key" '%s' "$value"
     export "$key"
   done < "$env_file"
 }
 
+trim_leading_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "$value"
+}
+
 trim_whitespace() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+normalize_url_value() {
+  local value="$1"
+  if [[ "$value" =~ ^\".*\"$ || "$value" =~ ^\'.*\'$ ]]; then
+    printf '%s' "${value:1:${#value}-2}"
+    return
+  fi
   printf '%s' "$value"
 }
 
@@ -101,18 +115,23 @@ fi
 export PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ -n "${DATABASE_URL:-}" ]; then
+  DATABASE_URL="$(normalize_url_value "$DATABASE_URL")"
   DATABASE_URL="$(rewrite_service_host "$DATABASE_URL" "db" "localhost")"
 fi
 if [ -n "${DATABASE_SYNC_URL:-}" ]; then
+  DATABASE_SYNC_URL="$(normalize_url_value "$DATABASE_SYNC_URL")"
   DATABASE_SYNC_URL="$(rewrite_service_host "$DATABASE_SYNC_URL" "db" "localhost")"
 fi
 if [ -n "${REDIS_URL:-}" ]; then
+  REDIS_URL="$(normalize_url_value "$REDIS_URL")"
   REDIS_URL="$(rewrite_service_host "$REDIS_URL" "redis" "localhost")"
 fi
 if [ -n "${CELERY_BROKER_URL:-}" ]; then
+  CELERY_BROKER_URL="$(normalize_url_value "$CELERY_BROKER_URL")"
   CELERY_BROKER_URL="$(rewrite_service_host "$CELERY_BROKER_URL" "redis" "localhost")"
 fi
 if [ -n "${CELERY_RESULT_BACKEND:-}" ]; then
+  CELERY_RESULT_BACKEND="$(normalize_url_value "$CELERY_RESULT_BACKEND")"
   CELERY_RESULT_BACKEND="$(rewrite_service_host "$CELERY_RESULT_BACKEND" "redis" "localhost")"
 fi
 export DATABASE_URL DATABASE_SYNC_URL REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND

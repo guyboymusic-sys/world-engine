@@ -754,6 +754,7 @@ def test_configure_script_parses_quoted_env_values_with_whitespace(tmp_path):
     (tmp_path / "backend").mkdir()
     shutil.copy(REPO_ROOT / "scripts" / "configure.sh", tmp_path / "scripts" / "configure.sh")
     (tmp_path / "backend" / ".env.example").write_text(
+        "  # comment with leading whitespace\n"
         'DATABASE_URL = "postgresql+asyncpg://db:5432/worldengine"\n'
         "DATABASE_SYNC_URL = 'postgresql://db:5432/worldengine'\n"
         'REDIS_URL = "redis://redis:6379/0"\n'
