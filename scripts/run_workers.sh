@@ -32,22 +32,27 @@ TTS_WORKER_CONCURRENCY="${TTS_WORKER_CONCURRENCY:-1}"
 LLM_WORKER_CONCURRENCY="${LLM_WORKER_CONCURRENCY:-1}"
 
 pids=()
+pgids=()
 
 start_worker() {
   local name="$1"
   local queue="$2"
   local concurrency="$3"
 
-  celery -A backend.core.celery_app:celery_app worker \
+  setsid celery -A backend.core.celery_app:celery_app worker \
     -Q "$queue" \
     --loglevel="${CELERY_LOGLEVEL:-info}" \
     --concurrency="$concurrency" \
     -n "${name}@%h" &
 
   pids+=("$!")
+  pgids+=("$!")
 }
 
 cleanup() {
+  for pgid in "${pgids[@]}"; do
+    kill -- "-$pgid" >/dev/null 2>&1 || true
+  done
   for pid in "${pids[@]}"; do
     kill "$pid" >/dev/null 2>&1 || true
   done

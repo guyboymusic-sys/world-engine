@@ -12,6 +12,7 @@ def test_celery_urls_default_to_none(monkeypatch):
 
     assert settings.celery_broker_url is None
     assert settings.celery_result_backend is None
+    get_settings.cache_clear()
 
 
 def test_celery_urls_can_be_set(monkeypatch):
@@ -23,6 +24,7 @@ def test_celery_urls_can_be_set(monkeypatch):
 
     assert settings.celery_broker_url == "redis://localhost:6379/1"
     assert settings.celery_result_backend == "redis://localhost:6379/2"
+    get_settings.cache_clear()
 
 
 def test_celery_app_falls_back_to_redis_url(monkeypatch):
